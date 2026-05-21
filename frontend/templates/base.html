@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="description" content="Cold Weather Range Degradation Modeler for Electric Vehicles - ML-powered EV range prediction">
+    <title>{% block title %}EV Cold Weather Modeler{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    {% block body %}
+    <div class="app-wrapper">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon">⚡</div>
+                <div>
+                    <div class="brand-text">EV Cold Weather</div>
+                    <div class="brand-sub">Range Modeler</div>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Main</div>
+                    <a href="{{ url_for('dashboard.index') }}" class="nav-link {% if request.endpoint and 'dashboard' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">📊</span> Dashboard
+                    </a>
+                    <a href="{{ url_for('predictions.index') }}" class="nav-link {% if request.endpoint and 'predictions' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">🤖</span> ML Predictions
+                    </a>
+                    <a href="{{ url_for('vehicles.list_vehicles') }}" class="nav-link {% if request.endpoint and 'vehicles' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">🚗</span> EV Vehicles
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Analysis</div>
+                    <a href="{{ url_for('weather.index') }}" class="nav-link {% if request.endpoint and 'weather' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">🌤️</span> Weather
+                    </a>
+                    <a href="{{ url_for('trip.index') }}" class="nav-link {% if request.endpoint and 'trip' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">🗺️</span> Trip Simulation
+                    </a>
+                    <a href="{{ url_for('charging.index') }}" class="nav-link {% if request.endpoint and 'charging' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">🔌</span> Charging Analysis
+                    </a>
+                    <a href="{{ url_for('compare.index') }}" class="nav-link {% if request.endpoint and 'compare' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">📈</span> Compare EVs
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Data</div>
+                    <a href="{{ url_for('datasets.index') }}" class="nav-link {% if request.endpoint and 'datasets' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">📁</span> Datasets
+                    </a>
+                    <a href="{{ url_for('reports.index') }}" class="nav-link {% if request.endpoint and 'reports' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">📄</span> Reports
+                    </a>
+                    {% if current_user.is_authenticated and current_user.is_admin %}
+                    <a href="{{ url_for('admin.panel') }}" class="nav-link {% if request.endpoint and 'admin' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">⚙️</span> Admin Panel
+                    </a>
+                    {% endif %}
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar">{{ current_user.username[0]|upper if current_user.is_authenticated else 'G' }}</div>
+                    <div class="user-details">
+                        <div class="user-name">{{ current_user.full_name if current_user.is_authenticated else 'Guest' }}</div>
+                        <div class="user-role">{{ current_user.role|title if current_user.is_authenticated else '' }}</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <button class="mobile-menu-btn" onclick="toggleSidebar()">☰</button>
+                <h1 class="topbar-title">{% block page_title %}Dashboard{% endblock %}</h1>
+                <div class="topbar-actions">
+                    <button class="btn-theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">🌙</button>
+                    {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('auth.profile') }}" class="btn btn-outline btn-sm">👤 Profile</a>
+                    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline btn-sm">🚪 Logout</a>
+                    {% endif %}
+                </div>
+            </header>
+
+            <div class="page-content">
+                <div id="alertContainer">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} animate-slide">
+                        {% if category == 'success' %}✅{% elif category == 'danger' %}❌{% elif category == 'warning' %}⚠️{% else %}ℹ️{% endif %}
+                        {{ message }}
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                    {% endwith %}
+                </div>
+
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+    {% endblock %}
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

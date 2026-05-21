@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}Real-Time Prediction Dashboard{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <!-- Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon blue">🌡️</div>
+            <div><div class="stat-value" id="statTemperature">--</div><div class="stat-label">Current Temperature</div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon green">🚗</div>
+            <div><div class="stat-value" id="statVehicles">--</div><div class="stat-label">EV Vehicles</div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon purple">🤖</div>
+            <div><div class="stat-value" id="statPredictions">--</div><div class="stat-label">Total Predictions</div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon red">📉</div>
+            <div><div class="stat-value" id="statDegradation">--</div><div class="stat-label">Avg Range Degradation</div></div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">🌡️ Temperature vs Predicted Range</h3></div>
+            <div class="chart-container"><canvas id="tempRangeChart"></canvas></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">⚡ Energy Efficiency Trends</h3></div>
+            <div class="chart-container"><canvas id="efficiencyChart"></canvas></div>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">📊 Seasonal Performance Comparison</h3></div>
+            <div class="chart-container"><canvas id="seasonalChart"></canvas></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">🚀 Quick Actions</h3></div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <a href="{{ url_for('predictions.index') }}" class="btn btn-primary" style="justify-content:flex-start;">🤖 New Prediction</a>
+                <a href="{{ url_for('trip.index') }}" class="btn btn-outline" style="justify-content:flex-start;">🗺️ Trip Simulation</a>
+                <a href="{{ url_for('charging.index') }}" class="btn btn-outline" style="justify-content:flex-start;">🔌 Charging Analysis</a>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">🔔 Smart Alerts</h3></div>
+            <div id="dashboardAlerts" style="display:flex;flex-direction:column;gap:10px;">
+                <p style="color:var(--text-muted);font-size:13px;">No active alerts for current conditions.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>document.addEventListener('DOMContentLoaded', loadDashboardCharts);</script>
+{% endblock %}

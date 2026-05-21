@@ -1,0 +1,11 @@
+temperature_c,humidity,wind_speed_kmh,precipitation,battery_percentage,vehicle_speed_kmh,hvac_usage,terrain_type,battery_age_years,battery_capacity_kwh,epa_range_km,vehicle_weight_kg,range_degradation_pct
+-25,80,45,snow,90,70,True,mountainous,2,75,500,2000,45.5
+-15,70,30,snow,100,60,True,hilly,1,82,580,2100,32.2
+-5,60,20,none,80,80,True,flat,0.5,60,420,1800,18.5
+5,50,10,none,100,90,True,flat,3,77,507,1950,10.2
+15,40,5,none,100,100,False,flat,1,100,600,2200,2.1
+25,30,0,none,100,110,False,flat,0,85,521,2150,0.0
+-10,85,50,snow,50,50,True,hilly,4,45,340,1500,38.4
+0,75,25,rain,70,60,True,flat,2,64,418,1750,22.1
+-20,90,60,snow,100,40,True,mountainous,1,75,533,1979,42.8
+10,45,15,none,90,120,True,flat,2,82,581,1945,12.5

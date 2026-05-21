@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Admin Panel — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}⚙️ Admin Panel{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <!-- Admin Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon blue">👥</div>
+            <div><div class="stat-value">{{ stats.total_users }}</div><div class="stat-label">Total Users</div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon green">🚗</div>
+            <div><div class="stat-value">{{ stats.total_vehicles }}</div><div class="stat-label">Active Vehicles</div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon purple">🤖</div>
+            <div><div class="stat-value">{{ stats.total_predictions }}</div><div class="stat-label">Total Predictions</div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon amber">📁</div>
+            <div><div class="stat-value">{{ stats.total_datasets }}</div><div class="stat-label">Datasets</div></div>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <!-- Recent Users -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">👥 Recent Users</h3>
+                <a href="{{ url_for('admin.manage_users') }}" class="btn btn-outline btn-sm">Manage All</a>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead><tr><th>User</th><th>Role</th><th>Joined</th></tr></thead>
+                    <tbody>
+                        {% for u in stats.recent_users %}
+                        <tr>
+                            <td><strong>{{ u.username }}</strong><br><span style="font-size:11px;color:var(--text-muted);">{{ u.email }}</span></td>
+                            <td><span class="badge {% if u.role == 'admin' %}badge-purple{% else %}badge-blue{% endif %}">{{ u.role|title }}</span></td>
+                            <td>{{ u.created_at.strftime('%b %d') if u.created_at else '--' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Admin Actions -->
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">🔧 Admin Actions</h3></div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                <a href="{{ url_for('admin.manage_users') }}" class="btn btn-outline" style="justify-content:flex-start;">👥 Manage Users</a>
+                <a href="{{ url_for('admin.analytics') }}" class="btn btn-outline" style="justify-content:flex-start;">📊 System Analytics</a>
+                <a href="{{ url_for('datasets.index') }}" class="btn btn-outline" style="justify-content:flex-start;">📁 Manage Datasets</a>
+                <button onclick="retrainModels()" class="btn btn-primary" style="justify-content:flex-start;">🤖 Retrain ML Models</button>
+                <a href="{{ url_for('vehicles.add_vehicle') }}" class="btn btn-outline" style="justify-content:flex-start;">🚗 Add Vehicle</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Predictions -->
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">🤖 Recent Predictions</h3></div>
+        <div class="table-container">
+            <table>
+                <thead><tr><th>User</th><th>Temperature</th><th>Degradation</th><th>Range</th><th>Model</th><th>Date</th></tr></thead>
+                <tbody>
+                    {% for p in stats.recent_predictions %}
+                    <tr>
+                        <td>{{ p.user.username if p.user else '--' }}</td>
+                        <td>{{ p.temperature_c }}°C</td>
+                        <td><span class="badge {% if p.range_degradation_pct and p.range_degradation_pct > 20 %}badge-red{% else %}badge-green{% endif %}">{{ '%.1f' | format(p.range_degradation_pct or 0) }}%</span></td>
+                        <td>{{ '%.0f' | format(p.predicted_range_km or 0) }} km</td>
+                        <td>{{ p.ml_model_used or '--' }}</td>
+                        <td>{{ p.created_at.strftime('%b %d %H:%M') if p.created_at else '--' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function retrainModels() {
+    if (!confirm('Retrain all ML models? This may take a moment.')) return;
+    try {
+        const result = await apiFetch('/admin/retrain', { method: 'POST' });
+        showAlert('success', 'ML models retrained successfully!');
+    } catch(e) { showAlert('danger', e.message); }
+}
+</script>
+{% endblock %}

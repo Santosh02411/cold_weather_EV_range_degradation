@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}ML Predictions — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🤖 ML Range Degradation Prediction{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <!-- Prediction Form -->
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Input Parameters</h3></div>
+            <form onsubmit="submitPrediction(event)">
+                <div class="form-group">
+                    <label class="form-label">Select EV Vehicle</label>
+                    <select name="vehicle_id" class="form-control" required>
+                        <option value="">-- Choose Vehicle --</option>
+                        {% for v in vehicles %}
+                        <option value="{{ v.id }}">{{ v.manufacturer }} {{ v.model_name }} ({{ v.battery_capacity_kwh }} kWh)</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Temperature (°C)</label>
+                        <input type="number" name="temperature_c" class="form-control" value="-10" step="0.1" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Humidity (%)</label>
+                        <input type="number" name="humidity" class="form-control" value="60" min="0" max="100">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Wind Speed (km/h)</label>
+                        <input type="number" name="wind_speed_kmh" class="form-control" value="15" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Precipitation</label>
+                        <select name="precipitation" class="form-control">
+                            <option value="none">None</option>
+                            <option value="rain">Rain</option>
+                            <option value="snow" selected>Snow</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Battery Level (%)</label>
+                        <input type="number" name="battery_percentage" class="form-control" value="100" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Speed (km/h)</label>
+                        <input type="number" name="vehicle_speed_kmh" class="form-control" value="60" min="0">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Terrain Type</label>
+                        <select name="terrain_type" class="form-control">
+                            <option value="flat">Flat</option>
+                            <option value="hilly">Hilly</option>
+                            <option value="mountainous">Mountainous</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Battery Age (years)</label>
+                        <input type="number" name="battery_age_years" class="form-control" value="0" min="0" max="15" step="0.5">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-check">
+                            <input type="checkbox" name="hvac_usage" checked> <span style="font-size:13px;color:var(--text-secondary)">HVAC / Heater Active</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">ML Model</label>
+                        <select name="ml_model" class="form-control">
+                            {% for m in ml_models %}
+                            <option value="{{ m.name }}" {% if m.name == 'random_forest' %}selected{% endif %}>{{ m.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg" style="width:100%;margin-top:8px;">⚡ Predict Range Degradation</button>
+            </form>
+        </div>
+
+        <!-- Recommendations -->
+        <div>
+            <div class="card" style="margin-bottom:20px;">
+                <div class="card-header"><h3 class="card-title">💡 Smart Recommendations</h3></div>
+                <div id="recommendationsContainer">
+                    <p style="color:var(--text-muted);font-size:13px;">Run a prediction to get smart recommendations.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Prediction Results -->
+    <div id="predictionResult" style="margin-top:20px;"></div>
+</div>
+{% endblock %}

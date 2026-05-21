@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Charging Analysis — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🔌 Charging Performance Analysis{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Charging Parameters</h3></div>
+            <form onsubmit="submitCharging(event)">
+                <div class="form-group">
+                    <label class="form-label">Select Vehicle</label>
+                    <select name="vehicle_id" class="form-control" required>
+                        <option value="">-- Choose Vehicle --</option>
+                        {% for v in vehicles %}
+                        <option value="{{ v.id }}">{{ v.manufacturer }} {{ v.model_name }} ({{ v.max_charging_power_kw or '?' }} kW max)</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Temperature (°C)</label>
+                    <input type="number" name="temperature_c" class="form-control" value="-10" step="0.1">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Current Battery (%)</label>
+                        <input type="number" name="current_pct" class="form-control" value="20" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Target Battery (%)</label>
+                        <input type="number" name="target_pct" class="form-control" value="80" min="0" max="100">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-check">
+                        <input type="checkbox" name="fast_charging" checked> <span style="font-size:13px;color:var(--text-secondary)">DC Fast Charging</span>
+                    </label>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg" style="width:100%;margin-top:8px;">⚡ Analyze Charging</button>
+            </form>
+        </div>
+        <div>
+            <div id="chargingResult">
+                <div class="card" style="text-align:center;padding:60px 20px;">
+                    <p style="font-size:48px;margin-bottom:12px;">🔌</p>
+                    <p style="color:var(--text-muted);">Set parameters to analyze charging performance in cold weather.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">📊 Charging Time vs Temperature</h3></div>
+        <div class="chart-container"><canvas id="chargingChart"></canvas></div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Profile — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}My Profile{% endblock %}
+{% block content %}
+<div style="max-width:600px;">
+    <div class="card animate-fade">
+        <div class="card-header">
+            <h3 class="card-title">👤 Profile Settings</h3>
+        </div>
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">First Name</label>
+                    <input type="text" name="first_name" class="form-control" value="{{ current_user.first_name or '' }}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Last Name</label>
+                    <input type="text" name="last_name" class="form-control" value="{{ current_user.last_name or '' }}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" name="email" class="form-control" value="{{ current_user.email }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">New Password (leave blank to keep current)</label>
+                <input type="password" name="new_password" class="form-control" placeholder="Enter new password">
+            </div>
+            <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+        </form>
+    </div>
+
+    <div class="card animate-fade" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">📊 Account Info</h3></div>
+        <div class="form-row">
+            <div class="spec-item"><span class="spec-label">Username</span><span class="spec-value">{{ current_user.username }}</span></div>
+            <div class="spec-item"><span class="spec-label">Role</span><span class="spec-value"><span class="badge badge-blue">{{ current_user.role|title }}</span></span></div>
+            <div class="spec-item"><span class="spec-label">Joined</span><span class="spec-value">{{ current_user.created_at.strftime('%b %d, %Y') if current_user.created_at else 'N/A' }}</span></div>
+            <div class="spec-item"><span class="spec-label">Last Login</span><span class="spec-value">{{ current_user.last_login.strftime('%b %d, %Y %H:%M') if current_user.last_login else 'N/A' }}</span></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

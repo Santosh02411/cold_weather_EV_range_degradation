@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Add Vehicle — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}➕ Add New EV Vehicle{% endblock %}
+{% block content %}
+<div style="max-width:700px;" class="animate-fade">
+    <div class="card">
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Manufacturer *</label>
+                    <input type="text" name="manufacturer" class="form-control" placeholder="e.g. Tesla, BYD" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Model Name *</label>
+                    <input type="text" name="model_name" class="form-control" placeholder="e.g. Model 3 Long Range" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Battery Capacity (kWh) *</label>
+                    <input type="number" name="battery_capacity_kwh" class="form-control" step="0.1" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">EPA Range (km) *</label>
+                    <input type="number" name="epa_range_km" class="form-control" step="0.1" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Vehicle Weight (kg) *</label>
+                    <input type="number" name="vehicle_weight_kg" class="form-control" step="0.1" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Battery Chemistry *</label>
+                    <select name="battery_chemistry" class="form-control" required>
+                        <option value="NMC">NMC (Nickel Manganese Cobalt)</option>
+                        <option value="LFP">LFP (Lithium Iron Phosphate)</option>
+                        <option value="NCA">NCA (Nickel Cobalt Aluminum)</option>
+                        <option value="LMO">LMO (Lithium Manganese Oxide)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Charging Type *</label>
+                    <input type="text" name="charging_type" class="form-control" placeholder="e.g. CCS, CHAdeMO" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Max Charging Power (kW)</label>
+                    <input type="number" name="max_charging_power_kw" class="form-control" step="0.1">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Drivetrain</label>
+                    <select name="drivetrain" class="form-control">
+                        <option value="">-- Select --</option>
+                        <option value="FWD">FWD</option>
+                        <option value="RWD">RWD</option>
+                        <option value="AWD">AWD</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Year</label>
+                    <input type="number" name="year" class="form-control" placeholder="2024">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Energy Consumption (Wh/km)</label>
+                <input type="number" name="energy_consumption_wh_km" class="form-control" step="0.1" placeholder="e.g. 150">
+            </div>
+            <div style="display:flex;gap:10px;margin-top:20px;">
+                <button type="submit" class="btn btn-primary">💾 Save Vehicle</button>
+                <a href="{{ url_for('vehicles.list_vehicles') }}" class="btn btn-outline">← Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

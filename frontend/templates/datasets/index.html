@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Datasets — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}📁 Dataset Management{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <!-- Upload Form -->
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 class="card-title">📤 Upload Dataset</h3></div>
+        <form onsubmit="uploadDataset(event)" enctype="multipart/form-data">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Dataset Name</label>
+                    <input type="text" name="name" class="form-control" placeholder="e.g. EV Winter Range Data" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">File (CSV, XLSX, JSON)</label>
+                    <input type="file" name="file" class="form-control" accept=".csv,.xlsx,.json" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input type="text" name="description" class="form-control" placeholder="Brief description of the dataset">
+            </div>
+            <button type="submit" class="btn btn-primary">📤 Upload & Analyze</button>
+        </form>
+    </div>
+
+    <!-- Datasets List -->
+    {% if datasets %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>File</th>
+                    <th>Rows</th>
+                    <th>Columns</th>
+                    <th>Size</th>
+                    <th>Status</th>
+                    <th>Uploaded</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in datasets %}
+                <tr>
+                    <td><strong>{{ d.name }}</strong></td>
+                    <td>{{ d.filename }}</td>
+                    <td>{{ d.num_rows or '--' }}</td>
+                    <td>{{ d.num_columns or '--' }}</td>
+                    <td>{{ '%.1f KB' | format(d.file_size / 1024) if d.file_size else '--' }}</td>
+                    <td>
+                        {% if d.is_processed %}
+                        <span class="badge badge-green">Processed</span>
+                        {% else %}
+                        <span class="badge badge-amber">Raw</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ d.created_at.strftime('%b %d, %Y') if d.created_at else '--' }}</td>
+                    <td>
+                        {% if not d.is_processed %}
+                        <button onclick="preprocessDataset({{ d.id }})" class="btn btn-outline btn-sm">🔧 Preprocess</button>
+                        {% endif %}
+                        <button onclick="deleteDataset({{ d.id }})" class="btn btn-outline btn-sm" style="color:var(--accent-red);">🗑️</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card" style="text-align:center;padding:40px;">
+        <p style="font-size:48px;margin-bottom:12px;">📁</p>
+        <p style="color:var(--text-muted);">No datasets uploaded yet. Upload a CSV to get started.</p>
+        <p style="color:var(--text-muted);font-size:12px;margin-top:8px;">Suggested sources: Kaggle, UCI ML Repository</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function preprocessDataset(id) {
+    if (!confirm('Preprocess this dataset? This will clean missing values and remove outliers.')) return;
+    try {
+        const result = await apiFetch(`/datasets/api/preprocess/${id}`, { method: 'POST' });
+        showAlert('success', `Preprocessing complete! ${result.removed} rows removed.`);
+        setTimeout(() => location.reload(), 1500);
+    } catch(e) { showAlert('danger', e.message); }
+}
+async function deleteDataset(id) {
+    if (!confirm('Delete this dataset permanently?')) return;
+    try {
+        await apiFetch(`/datasets/api/delete/${id}`, { method: 'POST' });
+        showAlert('success', 'Dataset deleted.');
+        setTimeout(() => location.reload(), 1000);
+    } catch(e) { showAlert('danger', e.message); }
+}
+</script>
+{% endblock %}
