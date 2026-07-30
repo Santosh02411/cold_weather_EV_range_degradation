@@ -1,6 +1,6 @@
 """Explainable AI Module — SHAP-based explanations"""
 import numpy as np
-from .predict import load_model, FEATURE_COLS, _encode_precipitation, _encode_terrain
+from .predict import load_model, FEATURE_COLS, _encode_precipitation, _encode_terrain, _build_feature_row
 
 
 def get_shap_explanation(features, model_name='random_forest'):
@@ -107,7 +107,13 @@ def get_shap_explanation(features, model_name='random_forest'):
         import shap
         model = load_model(model_name)
         if model and hasattr(model, 'predict'):
-            X = np.array([[processed.get(col, 0) for col in FEATURE_COLS]])
+            # Previously rebuilt X by hand here, which silently defaulted
+            # the new physics_baseline_degradation feature to 0 instead
+            # of the real calibrated value predict.py computes -- SHAP
+            # would have explained a model that was never actually run
+            # this way during training. Reusing the shared builder keeps
+            # this in sync with predict.py by construction.
+            _, X = _build_feature_row(features)
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(X)
             feature_importance = dict(zip(FEATURE_COLS, shap_values[0].tolist()))

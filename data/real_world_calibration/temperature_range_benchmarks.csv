@@ -1,0 +1,14 @@
+temperature_c,temperature_f,pct_of_rated_range_retained,condition,sample_size,source,source_url,published
+21.5,70.7,115,"sweet spot, no HVAC load",5200000,"Geotab - EV Range Impact of Speed and Temperature",https://www.geotab.com/blog/ev-range/,2023-11-30
+10,50,100,"lower bound of 100% range band",5200000,"Geotab - How temperature and speed impact EV range",https://www.geotab.com/blog/ev-range-impact-of-speed-and-temperature/,2023-11-30
+30,86,100,"upper bound of 100% range band",5200000,"Geotab - How temperature and speed impact EV range",https://www.geotab.com/blog/ev-range-impact-of-speed-and-temperature/,2023-11-30
+0,32,78,"average across 34 EV models, no explicit HVAC control",30000,"Recurrent Auto - Winter & Cold Weather EV Range Study",https://www.recurrentauto.com/research/winter-ev-range-loss,2026-01
+0,32,83,"average, vehicles with heat pump",30000,"Recurrent Auto - Winter & Cold Weather EV Range Study",https://www.recurrentauto.com/research/winter-ev-range-loss,2026-01
+0,32,75,"average, vehicles with resistive heater",30000,"Recurrent Auto - Winter & Cold Weather EV Range Study",https://www.recurrentauto.com/research/winter-ev-range-loss,2026-01
+0,32,88,"best-performing model in freezing conditions",30000,"Recurrent Auto - Winter & Cold Weather EV Range Study",https://www.recurrentauto.com/research/winter-ev-range-loss,2026-01
+0,32,69,"worst-performing model in freezing conditions",30000,"Recurrent Auto - Winter & Cold Weather EV Range Study",https://www.recurrentauto.com/research/winter-ev-range-loss,2026-01
+-7,20,60,"with climate control (heater) running",1,"AAA - Cold Weather EV Range Test",https://www.aaa.com,2023
+-7,20,88,"temperature alone, no cabin heating",1,"AAA - Cold Weather EV Range Test",https://www.aaa.com,2023
+-10,14,75,"average, 14F band",10000,"Recurrent Auto - Winter & Cold Weather EV Range Study",https://www.recurrentauto.com/research/winter-ev-range-loss,2026-01
+-15,5,54,"average across tracked EVs",5200000,"Geotab - Top EV Range Factors Impacting Fleet Efficiency",https://www.geotab.com/blog/ev-range/,2025-10-30
+-25,-13,50,"extreme cold days, approximate floor",5200000,"Geotab - EV Range Impact of Speed and Temperature",https://www.geotab.com/blog/ev-range-impact-of-speed-and-temperature/,2023-11-30

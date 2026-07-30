@@ -1,5 +1,30 @@
+# Secrets / environment
 .env
+.env.local
+*.pem
+*.key
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+venv/
+.venv/
+
+# Database
 *.db
+instance/
+
+# ML model artifacts (regenerate with `python backend/app/ml/train.py`)
+backend/app/ml/saved_models/
 *.pkl
+
+# Uploaded user files
+data/uploads/
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
