@@ -55,6 +55,7 @@ def fetch_openweathermap(city, api_key):
                 weather['precipitation'] = 'none'
 
             weather['severity'] = classify_severity(weather['temperature_c'])
+            weather['data_source'] = 'live'
             return weather, None
         else:
             return None, f"API returned status {response.status_code}"
@@ -79,6 +80,7 @@ def get_demo_weather(city):
         'icon': '01d',
         'precipitation': 'snow' if temp < -5 else ('rain' if temp < 10 and random.random() > 0.5 else 'none'),
         'severity': classify_severity(temp),
+        'data_source': 'demo_fallback',
     }
 
 
@@ -149,7 +151,7 @@ def get_forecast():
                         'weather': item['weather'][0]['main'] if item.get('weather') else 'Unknown',
                         'severity': classify_severity(item['main']['temp']),
                     })
-                return jsonify({'city': city, 'forecasts': forecasts})
+                return jsonify({'city': city, 'forecasts': forecasts, 'data_source': 'live'})
         except Exception:
             pass
 
@@ -167,7 +169,7 @@ def get_forecast():
             'weather': 'Snow' if temp < -5 else ('Rain' if temp < 5 else 'Clear'),
             'severity': classify_severity(temp),
         })
-    return jsonify({'city': city, 'forecasts': forecasts, 'note': 'Demo data'})
+    return jsonify({'city': city, 'forecasts': forecasts, 'note': 'Demo data', 'data_source': 'demo_fallback'})
 
 
 @weather_bp.route('/api/history')

@@ -2,15 +2,25 @@
 
 An AI & Machine Learning powered web application that predicts Electric Vehicle (EV) range degradation in cold weather conditions using advanced machine learning algorithms and real-time weather analysis.
 
-> **Phase 1 status (current):** the ML core was rebuilt to be grounded in
-> real, cited, published cold-weather EV studies instead of arbitrary
-> made-up thresholds, with real train/validation/test evaluation, model
-> versioning, and confidence scores derived from actual model agreement
-> instead of a hardcoded constant. Full write-up, design decisions, and
-> a phase-by-phase build log (including real bugs hit and fixed) live in
+> **Phase 1 & 2 status (current):** the ML core was rebuilt to be
+> grounded in real, cited, published cold-weather EV studies instead of
+> arbitrary made-up thresholds (Phase 1), and the manual terrain
+> dropdown / single-point trip input was upgraded to use real geocoding,
+> routing, and elevation data, plus a visible live-vs-demo weather
+> indicator (Phase 2). Full write-up, design decisions, and a
+> phase-by-phase build log (including real bugs hit and fixed, and what
+> could/couldn't be verified without live network access) live in
 > [`/docs`](./docs) — see especially
 > [`docs/TECHNICAL_ARCHITECTURE.md`](./docs/TECHNICAL_ARCHITECTURE.md) and
 > [`docs/PROJECT_WORKFLOW.md`](./docs/PROJECT_WORKFLOW.md).
+>
+> ⚠️ **Before relying on this in production:** the live HTTP calls added
+> in Phase 2 (`backend/app/services/geo.py` — geocoding, routing,
+> elevation) were written against each provider's documented API but
+> could not be executed in the sandbox this was built in (no outbound
+> network there). Run them for real and confirm before shipping — see
+> `docs/PROJECT_WORKFLOW.md`'s Phase 2 section for exactly what is and
+> isn't verified yet.
 
 ---
 
@@ -268,6 +278,33 @@ a legitimate source if you want to replace `seed_data.py`'s vehicle list
 with real, current specs.
 
 ---
+
+# 🗺️ Real routes, real elevation, real weather (Phase 2)
+
+`POST /trip/api/route-predict` takes real place names (e.g. `"Chicago,
+IL"` → `"Minneapolis, MN"`) instead of a manual distance + terrain
+guess:
+
+1. Geocodes both ends via **Nominatim** (OpenStreetMap)
+2. Fetches a real driving route via **OSRM**
+3. Samples the route's real elevation profile via **Open-Elevation** and
+   classifies actual terrain (flat/hilly/mountainous) from measured
+   elevation gain — no more guessing
+4. Pulls real current weather at the origin (or demo data, clearly
+   labeled — see the `data_source` field / badge below)
+5. Runs the same prediction model as the manual simulator on top of all
+   of the above
+
+All three geo providers are free and require no API key, but each has
+real usage limits — see `docs/TECHNICAL_ARCHITECTURE.md` §5 before
+relying on this for production traffic (short version: the OSRM demo
+server is evaluation-only; self-host it or switch providers for real
+usage — tracked as ticket RT-4 in `docs/FEATURE_TICKET_LIST.md`).
+
+**Live vs. demo weather is now visible, not silent:** every weather
+response includes a `data_source` field (`"live"` or `"demo_fallback"`),
+and the weather page shows a green/yellow badge accordingly instead of
+quietly substituting random numbers.
 
 # 🔮 Future Enhancements
 

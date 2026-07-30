@@ -8,15 +8,29 @@ from app.models.ev_vehicle import EVVehicle
 
 
 VEHICLES = [
+    # --- Phase 2 (DATA-1) note ---
+    # Only the two entries marked "verified" below were checked against
+    # real, cited sources during Phase 2 (see docs/PROJECT_WORKFLOW.md
+    # for the two corrections this produced). The rest of this list is
+    # unchanged from the original project and has NOT been independently
+    # verified yet -- treat other entries as reasonable estimates, not
+    # confirmed real specs, until they go through the same check (or
+    # until scripts/sync_openev_data.py is run against a real network
+    # connection to bulk-refresh this list from OpenEV Data).
     # Tesla
     {'model_name': 'Model 3 Standard Range Plus', 'manufacturer': 'Tesla', 'battery_capacity_kwh': 60,
      'epa_range_km': 423, 'vehicle_weight_kg': 1752, 'battery_chemistry': 'LFP',
      'charging_type': 'Tesla Supercharger / CCS', 'max_charging_power_kw': 170, 'drivetrain': 'RWD',
      'year': 2024, 'energy_consumption_wh_km': 142},
-    {'model_name': 'Model 3 Long Range', 'manufacturer': 'Tesla', 'battery_capacity_kwh': 82,
-     'epa_range_km': 580, 'vehicle_weight_kg': 1830, 'battery_chemistry': 'NCA',
+    # verified: EPA-rated 342 mi (=550 km) range, 82.1 kWh battery, 1851 kg
+    # curb weight. Source: evspecifications.com 2024 Tesla Model 3 Long
+    # Range AWD; corroborated by KBB reporting Tesla's own "325+ mi" listing
+    # and prior EPA rating of 358mi for an earlier configuration. Original
+    # seed value was 82 kWh / 580 km / 1830 kg (close but not exact).
+    {'model_name': 'Model 3 Long Range', 'manufacturer': 'Tesla', 'battery_capacity_kwh': 82.1,
+     'epa_range_km': 550, 'vehicle_weight_kg': 1851, 'battery_chemistry': 'NCA',
      'charging_type': 'Tesla Supercharger / CCS', 'max_charging_power_kw': 250, 'drivetrain': 'AWD',
-     'year': 2024, 'energy_consumption_wh_km': 141},
+     'year': 2024, 'energy_consumption_wh_km': 149},
     {'model_name': 'Model Y Long Range', 'manufacturer': 'Tesla', 'battery_capacity_kwh': 75,
      'epa_range_km': 533, 'vehicle_weight_kg': 1979, 'battery_chemistry': 'NCA',
      'charging_type': 'Tesla Supercharger / CCS', 'max_charging_power_kw': 250, 'drivetrain': 'AWD',
@@ -43,10 +57,16 @@ VEHICLES = [
      'charging_type': 'CCS', 'max_charging_power_kw': 60, 'drivetrain': 'FWD',
      'year': 2024, 'energy_consumption_wh_km': 132},
     # Hyundai
+    # verified: EPA-rated 303 mi (=488 km) range for RWD Long Range trim
+    # (77.4 kWh battery). Source: Consumer Reports 2024 Ioniq 5 Road Test
+    # Report ("EPA-rated driving range is ... 303 miles for the single-
+    # motor, rear-wheel-drive versions with the 77.4-kWh battery"),
+    # corroborated by TopSpeed and Checkered Flag Hyundai World. Original
+    # seed value was 507 km, overstated vs. the real 488 km RWD figure.
     {'model_name': 'IONIQ 5 Long Range', 'manufacturer': 'Hyundai Motor Company', 'battery_capacity_kwh': 77.4,
-     'epa_range_km': 507, 'vehicle_weight_kg': 2010, 'battery_chemistry': 'NMC',
+     'epa_range_km': 488, 'vehicle_weight_kg': 2010, 'battery_chemistry': 'NMC',
      'charging_type': 'CCS', 'max_charging_power_kw': 233, 'drivetrain': 'RWD',
-     'year': 2024, 'energy_consumption_wh_km': 153},
+     'year': 2024, 'energy_consumption_wh_km': 159},
     {'model_name': 'IONIQ 6 Long Range', 'manufacturer': 'Hyundai Motor Company', 'battery_capacity_kwh': 77.4,
      'epa_range_km': 581, 'vehicle_weight_kg': 1945, 'battery_chemistry': 'NMC',
      'charging_type': 'CCS', 'max_charging_power_kw': 233, 'drivetrain': 'RWD',

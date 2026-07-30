@@ -110,3 +110,59 @@ Why: consistent with the whole point of this phase — the original
 project's core flaw was presenting untested/ungrounded work as more
 solid than it was. Applying a lower bar to this phase's own delivery
 would be self-defeating.
+
+---
+
+## Phase 2 additions
+
+**Decision: three separate free/keyless providers (Nominatim, OSRM,
+Open-Elevation) instead of one paid all-in-one provider (e.g. Google
+Maps Platform, Mapbox).**
+Why: the project has no API budget signal from the project owner, and
+Phase 1 already established a pattern of preferring free/verifiable
+sources over convenient-but-costly ones. The tradeoff is documented
+explicitly (OSRM's demo server isn't production-grade — ticket RT-4)
+rather than hidden, so switching to a paid provider later is a clear,
+scoped upgrade, not a surprise.
+
+**Decision: fail loudly on geocoding/routing failure, fail softly (with
+a labeled fallback) on elevation failure, in `route_predict()`.**
+Why: geocoding/routing are load-bearing — without them there's no route
+to predict over at all. Elevation is an enrichment of one input feature
+(`terrain_type`), which already has a reasonable manual-input fallback
+from Phase 1. Failing the whole request over a secondary enrichment
+would make the feature more fragile than it needs to be. This mirrors
+the physics-fallback pattern from Phase 1's `predict.py` — always keep
+serving a (labeled) answer over refusing outright, wherever the missing
+piece isn't actually essential.
+
+**Decision: elevation-gain thresholds (150m / 500m per 100 sampled
+points) for terrain classification are a documented judgment call, not
+derived from a cited standard.**
+Why: unlike the temperature curve (where real published anchor points
+exist), no equivalent public "elevation gain → EV range impact"
+benchmark was found during Phase 2. Rather than either (a) invent a
+false citation, or (b) skip real terrain classification entirely, the
+honest middle ground is: use a *real, measured* elevation profile (not
+a guess) and be explicit that the bucket boundaries mapping that real
+number onto flat/hilly/mountainous are engineering judgment. This is
+the same "ground what's groundable, label the rest honestly" pattern
+from Phase 1, applied to a new input.
+
+**Decision: hand-verify two vehicle spec entries via web search rather
+than wait until `sync_openev_data.py` can be run.**
+Why: the sync script needs network access this sandbox doesn't have, but
+"we'll fix the data later" with zero real corrections delivered now
+would repeat the exact pattern (claiming groundwork without doing any of
+it) that Phase 1 was meant to move away from. Two real, cited
+corrections shipped now, with the rest explicitly labeled unverified
+(not silently implied to be fixed), is more honest than either extreme.
+
+**Decision: `scripts/sync_openev_data.py` ships even though it was never
+executed.**
+Why: it's clearly labeled as unverified in its own docstring, has a
+`--dry-run` mode specifically so it can be sanity-checked before writing
+to a database, and captures real engineering work (the field-mapping
+logic between OpenEV Data's schema and this project's `EVVehicle`
+schema) that would otherwise need redoing from scratch later. Shipping
+labeled-unverified code is fine; shipping it *unlabeled* would not be.

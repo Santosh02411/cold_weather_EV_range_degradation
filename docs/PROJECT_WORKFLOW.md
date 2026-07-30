@@ -229,3 +229,117 @@ you edited.
   and the code path is a straightforward `model.fit()`/`model.predict()`
   call identical in shape to the other three models, so risk is judged
   low, but it genuinely wasn't executed here.
+
+---
+
+# Phase 2 — Real-Time & Data-Source Accuracy
+
+## Step 1 — Weather fallback visibility (ARCH-2)
+
+Straightforward: `get_demo_weather()` and `fetch_openweathermap()` now
+both set an explicit `data_source` field (`'live'` or `'demo_fallback'`)
+instead of only a `note` string that the UI never rendered. Added a
+visible badge in `main.js`'s `fetchWeather()`. No bugs surfaced here —
+flagged specifically because "no bugs" is worth stating plainly rather
+than manufacturing drama for a simple, low-risk change.
+
+## Step 2 — Real elevation/terrain (RT-1) and route prediction (RT-2)
+
+Built `services/geo.py` around three keyless providers (Nominatim, OSRM
+demo server, Open-Elevation — see `TECHNICAL_ARCHITECTURE.md` §5 for
+why each was chosen and their real usage limits).
+
+**Constraint hit immediately: no outbound network in this sandbox.**
+Unlike Phase 1 (where `physics.py`/`train.py`/`predict.py` are pure
+computation and could be fully exercised locally), `geo.py`'s entire
+job is making HTTP calls to external services — `requests.get()` to
+`nominatim.openstreetmap.org`, `router.project-osrm.org`, and
+`api.open-elevation.com` all fail here with no network path out of the
+container. This is a hard capability boundary, not a bug to fix.
+
+**What was actually verified vs. not**, stated plainly rather than
+glossed over:
+- `classify_terrain_from_elevations()` and `_sample_coordinates()` are
+  pure Python with no network dependency — tested directly with
+  synthetic elevation profiles (flat/hilly/mountainous cases, plus
+  empty-list and single-point edge cases). All behaved correctly,
+  including the two edge cases returning `('flat', 0.0)` instead of
+  crashing on a division by zero (`span_points` could be 0 for a
+  single-point list — guarded explicitly rather than relying on Python
+  not raising, since `0/0` would raise `ZeroDivisionError` for a plain
+  `/`, not silently return something wrong).
+- `geocode_place()`, `get_route()`, `get_elevation_profile()`, and the
+  new `/trip/api/route-predict` endpoint that chains them together are
+  syntax-checked (`py_compile`) and code-reviewed against each
+  provider's documented request/response shape, but **not** run against
+  the live APIs. This is the single most important thing to verify
+  before this ships — see the note at the top of `geo.py` and the
+  README's Phase 2 section.
+
+**Design decision made because of this constraint:** `route_predict()`
+fails loudly (returns an HTTP error) if geocoding or routing fails, but
+fails *softly* (falls back to a manual/default terrain value, and says
+so in the response via `terrain_source`) if only the elevation lookup
+fails. Reasoning: a missing route or unresolvable place name means the
+core request can't be fulfilled at all, but a missing elevation profile
+just means one input feature reverts to an estimate — better to still
+return a prediction with a labeled caveat than to fail the whole
+request over a secondary enrichment. This mirrors the "fail loud vs.
+fail soft, and always say which one happened" pattern already
+established in `predict.py`'s physics fallback from Phase 1.
+
+## Step 3 — Vehicle spec verification (DATA-1)
+
+Attempted a full bulk sync against OpenEV Data's live API first — same
+network constraint as Step 2 blocked it. Wrote `scripts/sync_openev_data.py`
+against OpenEV Data's documented API shape, ready to run in a normal
+network environment, but explicitly labeled as unverified in its own
+docstring rather than presented as working.
+
+As a partial, actually-completed alternative: used web search (available
+in this environment, unlike arbitrary `requests` calls from the sandboxed
+code execution tool) to manually verify two vehicle entries against real
+cited sources.
+
+**Real correction found — Tesla Model 3 Long Range:** original seed data
+listed 82 kWh / 580 km / 1830 kg. Cross-referenced against
+evspecifications.com's 2024 Tesla Model 3 Long Range AWD listing (82.1
+kWh, 1851 kg curb weight) and KBB's reporting on Tesla's EPA-rated range
+history for this configuration (342 mi ≈ 550 km, following a 358 mi
+rating for an earlier configuration). Updated to 82.1 kWh / 550 km /
+1851 kg, and recalculated `energy_consumption_wh_km` to stay consistent
+with the corrected capacity/range ratio (149 Wh/km) rather than leaving
+the old derived value in place next to new inputs.
+
+**Real correction found — Hyundai IONIQ 5 Long Range:** original seed
+data listed 507 km range. Consumer Reports' 2024 Ioniq 5 Road Test
+Report states the EPA-rated range is 303 miles (≈488 km) for the
+single-motor RWD configuration with the 77.4 kWh battery — corroborated
+by TopSpeed and a dealer spec page. Updated to 488 km, again
+recalculating `energy_consumption_wh_km` (159 Wh/km) to match.
+
+**What wasn't done:** the other 9 vehicles in `VEHICLES` were not
+individually re-verified — doing that properly for every entry would
+mean a dedicated search per vehicle trim, which wasn't proportionate to
+do by hand within this phase. Rather than silently leave the impression
+that "the vehicle list was fixed," `seed_data.py` now has an explicit
+comment stating which entries were checked and which weren't, and
+`scripts/sync_openev_data.py` exists specifically so the remaining
+entries can be bulk-verified for real once run somewhere with network
+access, instead of hand-checked one at a time indefinitely.
+
+## What Wasn't Tested — Phase 2 addendum
+
+- **All three live HTTP integrations in `geo.py`** (geocoding, routing,
+  elevation) — code-reviewed against documented API shapes, not
+  executed. **This is the top item to verify before relying on
+  `/trip/api/route-predict` in production.**
+- **`scripts/sync_openev_data.py`** — written against OpenEV Data's
+  documented API, not executed.
+- **The full Flask app, including the new `/trip/api/route-predict`
+  route** — same underlying limitation carried over from Phase 1 (no
+  `flask-sqlalchemy` installed in this sandbox, no network for the
+  route's external calls either way). Run `pip install -r
+  requirements.txt && python run.py`, then exercise both `/trip`'s
+  existing manual simulator and the new route-based predictor through
+  the actual UI before considering Phase 2 done.

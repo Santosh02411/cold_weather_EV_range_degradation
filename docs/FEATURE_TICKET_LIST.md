@@ -18,13 +18,15 @@ this folder — keep IDs stable if you reorder/reprioritize.
 
 ## Phase 2 — Real-Time & Data-Source Accuracy
 
-| ID | Title |
-|---|---|
-| ARCH-2 | Surface in the UI when weather data is demo/fallback vs. real (currently silent — `weather.py` falls back without a visible indicator) |
-| RT-1 | Elevation/terrain data via a real API (Open-Elevation or Google Elevation) instead of a manual flat/hilly/mountainous dropdown |
-| RT-2 | Route-based prediction: real route (OSRM/Google Maps) with elevation profile + segment-by-segment weather, instead of one static input |
-| RT-3 | Real-time vehicle telemetry integration (OBD-II / manufacturer APIs) where available, instead of manually entered battery %/speed |
-| DATA-1 | Wire OpenEV Data's real vehicle specs (battery capacity, rated range) into `seed_data.py` in place of the current hand-entered vehicle list |
+| ID | Title | Status |
+|---|---|---|
+| ARCH-2 | Surface in the UI when weather data is demo/fallback vs. real (currently silent — `weather.py` falls back without a visible indicator) | ✅ Done — `data_source` field on all weather responses + live/demo badge in `weather/index.html` UI |
+| RT-1 | Elevation/terrain data via a real API (Open-Elevation or Google Elevation) instead of a manual flat/hilly/mountainous dropdown | ✅ Done — `services/geo.py`, terrain derived from real elevation gain, not a guess |
+| RT-2 | Route-based prediction: real route (OSRM/Google Maps) with elevation profile + segment-by-segment weather, instead of one static input | 🟡 Partial — `/trip/api/route-predict` uses a real route + real elevation-derived terrain + real weather at the origin. True *segment-by-segment* weather along a long multi-city route is still a single origin-point lookup — see RT-5 below. |
+| RT-3 | Real-time vehicle telemetry integration (OBD-II / manufacturer APIs) where available, instead of manually entered battery %/speed | 🔲 Deferred — requires either physical OBD-II hardware access or manufacturer API partnerships (e.g. Tesla Fleet API approval), neither of which is obtainable inside a development sandbox. Revisit when there's a real vehicle/account to integrate against. |
+| DATA-1 | Wire OpenEV Data's real vehicle specs (battery capacity, rated range) into `seed_data.py` in place of the current hand-entered vehicle list | 🟡 Partial — `scripts/sync_openev_data.py` is written and ready, but couldn't be *executed* in this sandbox (no outbound network). Two entries (Tesla Model 3 Long Range, Hyundai IONIQ 5 Long Range) were spot-checked against cited real sources by hand and corrected in `seed_data.py`; the other 9 entries are unverified estimates, labeled as such in a comment at the top of `VEHICLES`. |
+| RT-4 | Replace the public OSRM demo server with a self-hosted instance or paid routing provider before any real deployment (the demo server's usage policy is "light use / evaluation only") | 🔲 Queued (Phase 5, alongside other production-hardening tickets) |
+| RT-5 | True segment-by-segment weather along a route (fetch conditions at multiple waypoints, not just the origin) for long trips that cross different weather zones | 🔲 Queued (Phase 3) |
 
 ## Phase 3 — AI/GenAI Layer
 

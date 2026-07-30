@@ -510,7 +510,11 @@ async function fetchWeather() {
         const weather = await apiFetch(`/weather/api/current?city=${encodeURIComponent(city)}`);
         const container = document.getElementById('weatherResult');
         if (container) {
-            container.innerHTML = `
+            const isLive = weather.data_source === 'live';
+            const sourceBadge = `<div class="alert ${isLive ? 'alert-success' : 'alert-warning'}" style="margin-bottom:1rem;">
+                ${isLive ? '🟢 Live data from OpenWeatherMap' : '🟡 Demo/fallback data' + (weather.note ? ' — ' + weather.note : ' — set OPENWEATHERMAP_API_KEY in .env for real conditions')}
+            </div>`;
+            container.innerHTML = sourceBadge + `
                 <div class="animate-slide stats-grid">
                     <div class="stat-card"><div class="stat-icon blue">🌡️</div>
                         <div><div class="stat-value">${weather.temperature_c}°C</div><div class="stat-label">Temperature (Feels ${weather.feels_like_c}°C)</div></div></div>

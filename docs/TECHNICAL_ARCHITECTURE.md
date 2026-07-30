@@ -152,7 +152,53 @@ receives a *real* varying value instead of always `0.85`, and
 `Prediction.shap_explanation` now reflects the physics-informed feature
 set.
 
-## 5. What Was Checked for Real Row-Level Data (and why it wasn't used)
+## 5. Phase 2 — Geo Services (`services/geo.py`)
+
+Added to replace two manual-input gaps identified in Phase 1's roadmap:
+the terrain dropdown (a guess) and single-point trip input (no real
+route). Three free, keyless providers, each chosen and scoped
+deliberately:
+
+| Provider | Used for | Real-world constraint |
+|---|---|---|
+| Nominatim (OpenStreetMap) | Geocoding place names → lat/lon | ~1 req/sec public rate limit; requires a descriptive `User-Agent` header (set in `_HEADERS`) |
+| OSRM public demo server | Driving route + geometry | Explicitly "light usage/evaluation" only — not for production traffic (ticket RT-4) |
+| Open-Elevation | Elevation profile along the route | Free but can be slow under load; route coordinates are sampled down to ≤25 points before lookup to keep each request small |
+
+**`classify_terrain_from_elevations()`** turns a raw elevation profile
+into the same `flat` / `hilly` / `mountainous` category the ML model
+already expects (see `train.py`/`predict.py`'s `terrain_type` feature),
+using cumulative elevation gain normalized per 100 sampled points.
+Thresholds (150m / 500m) are a documented judgment call for mapping a
+continuous real measurement onto this project's existing 3-bucket
+categorical feature — not derived from a formal grading-classification
+standard — see `MEMORY.md` for the reasoning.
+
+**New endpoint:** `POST /trip/api/route-predict` (in `trip.py`) chains
+these together: geocode origin + destination → fetch real route →
+derive real terrain from the route's actual elevation profile → fetch
+real current weather at the origin → run the same `get_prediction()`
+used everywhere else. It reuses `weather.py`'s `fetch_openweathermap`/
+`get_demo_weather` functions directly rather than duplicating weather
+logic, and falls back gracefully (not fatally) if elevation lookup
+fails, labeling the terrain source as `'fallback'` in the response
+rather than silently pretending it was measured.
+
+**What this endpoint does NOT do yet** (see `FEATURE_TICKET_LIST.md`
+RT-5): weather is only fetched at the origin, not sampled along the
+route. For a short local trip this is a reasonable approximation; for
+a long multi-region trip it isn't, and that limitation is surfaced in
+the ticket list rather than left implicit.
+
+**Verification status:** these three HTTP integrations were written
+against each provider's documented API but could not be executed
+against the live internet in the sandbox this was built in (no
+outbound network access there — see `PROJECT_WORKFLOW.md`). The
+terrain-classification *logic* itself (pure Python, no network) was
+tested directly with synthetic elevation profiles. The network calls
+themselves need a real run-through before shipping.
+
+## 6. What Was Checked for Real Row-Level Data (and why it wasn't used)
 
 Before building the physics-informed hybrid, the following were
 evaluated as potential sources of real, row-level (per-trip) EV
