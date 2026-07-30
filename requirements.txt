@@ -9,17 +9,30 @@ SQLAlchemy==2.0.31
 PyMySQL==1.1.1
 python-dotenv==1.0.1
 requests==2.32.3
-scikit-learn==1.5.1
-xgboost==2.1.1
-pandas==2.2.2
-numpy==1.26.4
-shap==0.45.1
+# --- Scientific/ML stack: minimum versions instead of exact pins ---
+# The original exact pins here (scikit-learn 1.5.1, numpy 1.26.4,
+# scipy 1.14.0, pandas 2.2.2) all predate prebuilt Python 3.13 wheels
+# being published (scikit-learn added cp313 wheels in 1.6.0; numpy in
+# 2.1.1; pandas in 2.2.3; scipy in ~1.14.1). Pinning to those exact
+# versions forces pip to compile from source on Python 3.13, which
+# needs a full C/C++/Fortran + Cython + Meson toolchain and fails on
+# most Windows machines with only a basic/older compiler installed —
+# this is exactly the error a user hit running `pip install -r
+# requirements.txt` on Python 3.13/Windows. Using >= here lets pip pick
+# the latest compatible wheel instead of trying to build 1.5.1 from
+# source. See docs/PROJECT_WORKFLOW.md's "Post-delivery fixes" section
+# for the real report this was fixed from.
+scikit-learn>=1.6.0
+xgboost>=2.1.1
+pandas>=2.2.3
+numpy>=2.1.1
+shap>=0.46.0
 lime==0.2.0.1
 plotly==5.22.0
-matplotlib==3.9.1
+matplotlib>=3.9.2
 reportlab==4.2.2
-Pillow==10.4.0
+Pillow>=10.4.0
 WTForms==3.1.2
 email-validator==2.2.0
 joblib==1.4.2
-scipy==1.14.0
+scipy>=1.14.1

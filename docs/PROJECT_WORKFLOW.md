@@ -469,3 +469,56 @@ change.
   `node --check`, but the briefing button / Q&A box / anomaly badge UI
   was not visually verified in a browser DOM.
 - **The full Flask app** — same standing limitation from Phases 1-2.
+
+---
+
+# Post-Delivery Fixes
+
+This section logs real problems reported after a phase was delivered —
+the actual "run it for real" verification step flagged as outstanding
+in every phase above, happening as it happens, not retroactively
+smoothed over.
+
+## Fix 1 — `pip install -r requirements.txt` failed on Python 3.13 / Windows
+
+**Reported:** user ran `pip install -r requirements.txt` on Windows with
+Python 3.13 and got a hard failure trying to build `scikit-learn==1.5.1`
+from source (`Cython requires python3 dependency for link testing, but
+it could not be found`, via a Meson build using an old MinGW gcc 6.3.0
+toolchain).
+
+**Root cause:** `requirements.txt` pinned exact versions
+(`scikit-learn==1.5.1`, `numpy==1.26.4`, `scipy==1.14.0`,
+`pandas==2.2.2`) that all predate their projects publishing prebuilt
+Windows wheels for Python 3.13:
+- scikit-learn added Python 3.13 wheel support in 1.6.0 (1.5.x only
+  supports up to Python 3.12)
+- numpy added Python 3.13 wheels in 2.1.1
+- pandas added Python 3.13 wheels in 2.2.3
+- scipy added Python 3.13 wheels around 1.14.1
+
+With no matching wheel for their Python version, pip fell back to
+building scikit-learn from source, which requires a full C/C++/Fortran
+toolchain plus Cython and Meson — not something a typical Windows
+Python install has configured, hence the failure. This wasn't caught in
+Phases 1-3 because none of those phases could install packages in the
+sandbox they were built in (no outbound network for `pip install`
+either) — this is precisely the gap flagged repeatedly across "What
+Wasn't Tested" sections, now materialized as a real report.
+
+**Fix:** relaxed the scientific/ML stack in `requirements.txt` from
+exact pins to `>=` minimums that do have Python 3.13 wheels
+(`scikit-learn>=1.6.0`, `numpy>=2.1.1`, `pandas>=2.2.3`,
+`scipy>=1.14.1`, plus `xgboost`, `shap`, `matplotlib`, `Pillow` bumped
+the same way for consistency) — reasoned about via public release notes
+research rather than guessed, since getting a wheel-availability claim
+wrong here would just produce the same failure again. Pure-Python /
+low-risk packages (Flask family, WTForms, etc.) were left as exact
+pins, since they're not the ones that fail to build from source.
+
+**What to verify next:** this fix is reasoned from public version-support
+information, not confirmed by actually running `pip install` on Windows
+Python 3.13 in this sandbox (still no outbound network here). If it
+still fails, the most robust fallback is installing Python 3.11 or 3.12
+instead (both have full, long-standing wheel coverage for this entire
+stack) rather than continuing to chase Python 3.13 compatibility.
