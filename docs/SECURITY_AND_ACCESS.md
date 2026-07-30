@@ -80,7 +80,38 @@ project's approach to accuracy claims in general:
    `joblib.load` output validation before it ships (flagged for
    awareness, not currently in scope since no such upload path exists).
 
-## 6. Data Sensitivity
+## 7. Phase 3 — LLM Endpoint Security
+
+- `ANTHROPIC_API_KEY` follows the same secrets pattern as the weather
+  keys (§3): env var only, gitignored `.env`, never hardcoded.
+- **Prompt injection (basic awareness, not hardened):** `answer_question()`
+  in `services/ai_features.py` passes the driver's free-form question
+  directly into the LLM call. The system prompt instructs the model to
+  ignore attempts to override its grounding rules and to redirect
+  off-topic requests, which covers casual misuse, but this is **not** a
+  hardened defense against a determined prompt-injection attempt — no
+  input sanitization, no output filtering, no separate
+  classifier-based guard. Since the LLM has no tool access and no
+  ability to take actions (it only returns text that's displayed back
+  to the same user who wrote the question), the blast radius of a
+  successful injection here is limited to "the assistant says something
+  off-brief to the user who prompted it" — not data exfiltration or
+  cross-user impact. Revisit if this endpoint ever gains tool access
+  (e.g. if a future phase lets the assistant query other users' data or
+  take actions) — that would raise the stakes significantly and warrant
+  real hardening, not just instruction-following.
+- **Ownership checks:** all three new endpoints
+  (`/predictions/api/<id>/briefing`, `/ask`, `/anomaly`) verify the
+  requesting user owns the prediction before returning anything,
+  identical to the existing `/api/history` rule — a user cannot get an
+  AI briefing for someone else's prediction by guessing IDs.
+- **Cost/abuse:** there is currently no rate limiting on the `/ask`
+  endpoint specifically (beyond the general absence of rate limiting
+  noted in §5, ticket SEC-1) — a user could spam questions and run up
+  API costs against whichever `ANTHROPIC_API_KEY` is configured. Treat
+  this as part of ticket SEC-1's scope, not a separate gap.
+
+## 8. Data Sensitivity
 
 - User accounts, saved predictions, and trip simulations are considered
   personal data tied to a `user_id`. No data is currently sent to any

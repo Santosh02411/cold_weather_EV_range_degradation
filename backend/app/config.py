@@ -19,6 +19,12 @@ class Config:
     OPENWEATHERMAP_API_KEY = os.environ.get('OPENWEATHERMAP_API_KEY', 'demo')
     WEATHERAPI_KEY = os.environ.get('WEATHERAPI_KEY', 'demo')
 
+    # Phase 3: LLM-grounded trip briefings / assistant (see services/llm.py).
+    # No key -> features fall back to template-based text, same
+    # fail-soft-and-say-so pattern as the weather demo fallback.
+    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+    ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-5')
+
     MAIL_SERVER = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
     MAIL_PORT = int(os.environ.get('MAIL_PORT', 587))
     MAIL_USE_TLS = True

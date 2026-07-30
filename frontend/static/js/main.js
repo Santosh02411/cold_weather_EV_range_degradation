@@ -284,8 +284,14 @@ function displayPredictionResult(result) {
 
     const p = result.prediction;
     const v = result.vehicle;
+    const anomaly = result.anomaly;
     container.innerHTML = `
         <div class="animate-slide">
+            ${anomaly && anomaly.is_anomaly ? `<div class="alert alert-warning" style="margin-bottom:12px">
+                ⚠️ This prediction is ${Math.abs(anomaly.deviation_pct)} percentage points ${anomaly.direction === 'worse_than_expected' ? 'higher' : 'lower'}
+                than the ${anomaly.physics_baseline_pct}% typically seen at ${p.temperature_c}°C in published studies.
+                <button class="btn btn-sm" onclick="loadAnomalyNote(${p.id}, this)" style="margin-left:8px">Explain why</button>
+            </div>` : ''}
             <div class="stats-grid" style="margin-bottom:16px">
                 <div class="stat-card">
                     <div class="stat-icon red">📉</div>
@@ -305,8 +311,66 @@ function displayPredictionResult(result) {
                 </div>
             </div>
             ${result.explanation ? renderExplanation(result.explanation) : ''}
+            <div class="card" style="margin-top:16px" id="aiBriefingCard">
+                <div class="card-header"><h3 class="card-title">💬 AI Trip Briefing</h3></div>
+                <div id="aiBriefingBody">
+                    <button class="btn" onclick="loadBriefing(${p.id})">Generate briefing</button>
+                </div>
+                <div style="margin-top:14px;display:flex;gap:8px;">
+                    <input type="text" id="aiQuestionInput" placeholder="Ask about this prediction…" style="flex:1" />
+                    <button class="btn" onclick="askAboutPrediction(${p.id})">Ask</button>
+                </div>
+                <div id="aiAnswerBody" style="margin-top:10px;"></div>
+            </div>
         </div>
     `;
+}
+
+// ═══ Phase 3: AI features (briefing / Q&A / anomaly) ═══
+async function loadBriefing(predictionId) {
+    const body = document.getElementById('aiBriefingBody');
+    if (body) body.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;"></span> Generating…';
+    try {
+        const result = await apiFetch(`/predictions/api/${predictionId}/briefing`);
+        if (body) body.innerHTML = `<p style="color:var(--text-secondary);font-size:14px">${result.briefing}</p>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">source: ${result.source}</div>`;
+    } catch (e) {
+        if (body) body.innerHTML = `<p style="color:var(--text-muted);font-size:13px">Couldn't generate a briefing: ${e.message}</p>`;
+    }
+}
+
+async function askAboutPrediction(predictionId) {
+    const input = document.getElementById('aiQuestionInput');
+    const answerBody = document.getElementById('aiAnswerBody');
+    const question = input?.value?.trim();
+    if (!question) return;
+    if (answerBody) answerBody.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;"></span> Thinking…';
+    try {
+        const result = await apiFetch(`/predictions/api/${predictionId}/ask`, {
+            method: 'POST', body: JSON.stringify({ question }),
+        });
+        if (answerBody) answerBody.innerHTML = `<p style="color:var(--text-secondary);font-size:14px">${result.answer}</p>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">source: ${result.source}</div>`;
+    } catch (e) {
+        if (answerBody) answerBody.innerHTML = `<p style="color:var(--text-muted);font-size:13px">Couldn't get an answer: ${e.message}</p>`;
+    }
+}
+
+async function loadAnomalyNote(predictionId, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+    try {
+        const result = await apiFetch(`/predictions/api/${predictionId}/anomaly`);
+        if (btn && result.note) {
+            const p = document.createElement('div');
+            p.style.marginTop = '8px';
+            p.style.fontSize = '13px';
+            p.textContent = result.note;
+            btn.parentElement.appendChild(p);
+            btn.remove();
+        }
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Explain why'; }
+    }
 }
 
 function renderExplanation(explanation) {

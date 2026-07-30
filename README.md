@@ -2,25 +2,27 @@
 
 An AI & Machine Learning powered web application that predicts Electric Vehicle (EV) range degradation in cold weather conditions using advanced machine learning algorithms and real-time weather analysis.
 
-> **Phase 1 & 2 status (current):** the ML core was rebuilt to be
+> **Phase 1, 2 & 3 status (current):** the ML core was rebuilt to be
 > grounded in real, cited, published cold-weather EV studies instead of
-> arbitrary made-up thresholds (Phase 1), and the manual terrain
-> dropdown / single-point trip input was upgraded to use real geocoding,
-> routing, and elevation data, plus a visible live-vs-demo weather
-> indicator (Phase 2). Full write-up, design decisions, and a
-> phase-by-phase build log (including real bugs hit and fixed, and what
-> could/couldn't be verified without live network access) live in
-> [`/docs`](./docs) — see especially
+> arbitrary made-up thresholds (Phase 1); the manual terrain dropdown and
+> single-point trip input were upgraded to use real geocoding, routing,
+> and elevation data, plus a visible live-vs-demo weather indicator
+> (Phase 2); and real LLM involvement was added — grounded trip
+> briefings, a Q&A assistant, and anomaly detection, all built on the
+> app's own computed numbers rather than free generation (Phase 3). Full
+> write-up, design decisions, and a phase-by-phase build log (including
+> real bugs hit and fixed, and what could/couldn't be verified without
+> live network access) live in [`/docs`](./docs) — see especially
 > [`docs/TECHNICAL_ARCHITECTURE.md`](./docs/TECHNICAL_ARCHITECTURE.md) and
 > [`docs/PROJECT_WORKFLOW.md`](./docs/PROJECT_WORKFLOW.md).
 >
 > ⚠️ **Before relying on this in production:** the live HTTP calls added
-> in Phase 2 (`backend/app/services/geo.py` — geocoding, routing,
-> elevation) were written against each provider's documented API but
-> could not be executed in the sandbox this was built in (no outbound
-> network there). Run them for real and confirm before shipping — see
-> `docs/PROJECT_WORKFLOW.md`'s Phase 2 section for exactly what is and
-> isn't verified yet.
+> in Phase 2 (`backend/app/services/geo.py`) and Phase 3
+> (`backend/app/services/llm.py`) were written against each provider's
+> documented API but could not be executed in the sandbox this was built
+> in (no outbound network there). Run them for real and confirm before
+> shipping — see `docs/PROJECT_WORKFLOW.md`'s Phase 2/3 sections for
+> exactly what is and isn't verified yet.
 
 ---
 
@@ -173,8 +175,23 @@ value to a public repo** — always go through `.env`, which git ignores.
 
 Other keys in `.env.example` (all optional):
 - `WEATHERAPI_KEY` — alternate weather provider, same signup pattern at https://www.weatherapi.com/signup.aspx
+- `ANTHROPIC_API_KEY` — powers Phase 3's AI trip briefings, Q&A, and anomaly narration (see below). Without it, these features fall back to template-generated text instead of failing.
 - `MAIL_USERNAME` / `MAIL_PASSWORD` — only needed if you enable email features (e.g. password reset); for Gmail, use an [App Password](https://myaccount.google.com/apppasswords), not your real password
 - `SECRET_KEY` — set this to a long random string in any real/public deployment; the default in `config.py` is fine for local dev only
+
+### Getting an Anthropic API key (for Phase 3's AI features)
+
+1. Create an account at https://console.anthropic.com
+2. Go to **API Keys** in the console and create a new key
+3. Add it to `.env`:
+   ```
+   ANTHROPIC_API_KEY=sk-ant-your-real-key-here
+   ```
+4. (Optional) `ANTHROPIC_MODEL` defaults to `claude-sonnet-5` — override it in `.env` if you want a different model. Full docs: https://docs.claude.com/en/api/overview
+
+This key is billed per API call by Anthropic (separate from any claude.ai
+subscription) — see https://docs.claude.com for current pricing before
+enabling this in a public deployment with real traffic.
 
 ## 5️⃣ (Optional) Train the ML models explicitly
 
@@ -305,6 +322,34 @@ usage — tracked as ticket RT-4 in `docs/FEATURE_TICKET_LIST.md`).
 response includes a `data_source` field (`"live"` or `"demo_fallback"`),
 and the weather page shows a green/yellow badge accordingly instead of
 quietly substituting random numbers.
+
+# 🤖 Real AI involvement, grounded (Phase 3)
+
+The original project claimed "AI & Machine Learning powered" with zero
+actual language-model involvement anywhere — classical ML on synthetic
+data isn't "AI" in the generative sense the branding implied. Phase 3
+closes that gap, deliberately narrowly:
+
+- **AI Trip Briefing** (`GET /predictions/api/<id>/briefing`) — a
+  natural-language summary of a saved prediction, written by Claude but
+  grounded entirely in that prediction's own already-computed numbers.
+  The model is explicitly instructed never to invent, adjust, or
+  recompute a figure — only to phrase the given facts fluently.
+- **Ask about a prediction** (`POST /predictions/api/<id>/ask`) — a
+  free-form Q&A box grounded the same way; off-topic questions get
+  politely redirected rather than answered from general knowledge.
+- **Anomaly detection** (`GET /predictions/api/<id>/anomaly`) — a real,
+  non-LLM check (implemented in `services/ai_features.py`) that flags
+  predictions deviating more than 20 percentage points from the Phase 1
+  real-world-calibrated physics baseline for that temperature. The LLM
+  is only used afterward, optionally, to phrase an already-detected
+  anomaly in plain language — it never decides what counts as anomalous.
+
+**No `ANTHROPIC_API_KEY` configured?** All three features still work —
+they fall back to template-generated text built from the same
+underlying data, clearly labeled `"source": "template"` in the API
+response, rather than failing. See "Getting an Anthropic API key" above
+to enable the LLM-generated version.
 
 # 🔮 Future Enhancements
 

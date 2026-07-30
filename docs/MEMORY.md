@@ -166,3 +166,82 @@ to a database, and captures real engineering work (the field-mapping
 logic between OpenEV Data's schema and this project's `EVVehicle`
 schema) that would otherwise need redoing from scratch later. Shipping
 labeled-unverified code is fine; shipping it *unlabeled* would not be.
+
+---
+
+## Phase 3 additions
+
+**Decision: the LLM only ever phrases already-computed facts; it never
+computes a number.**
+Why: this is the load-bearing decision for the entire phase, made before
+any code was written. An LLM asked to "estimate" or "adjust" a range
+figure would be reintroducing an ungrounded number dressed up as more
+credible than a hardcoded constant, since fluent prose reads as more
+authoritative than a bare number — arguably a regression from Phase 1's
+whole point, not a step forward. Every prompt in `ai_features.py`
+enforces this via `GROUNDING_RULES`, repeated in every system prompt
+rather than assumed to carry over.
+
+**Decision: anomaly detection (AI-3) is split into a pure-arithmetic
+`detect_anomaly()` and an LLM-only `narrate_anomaly()`, never combined
+into one LLM call.**
+Why: "is this anomalous" is a factual question with a real, computable
+answer (deviation from the Phase 1 calibrated baseline) — asking an LLM
+to make that judgment would substitute a real computation for a guess,
+which is strictly worse. The LLM's only job is turning an
+already-true finding into a sentence. This mirrors the physics-baseline
+architecture decision from Phase 1 (ground what's groundable, use the
+model only where it adds value on top).
+
+**Decision: 20 percentage-point anomaly threshold, not tuned further
+after the first test surprised us.**
+Why: initial testing (see `PROJECT_WORKFLOW.md`) showed extreme-cold
+scenarios don't trigger the flag, because both the physics baseline and
+the ML prediction share the same 65% cap and can't diverge past it by
+much. This was left as-is rather than "fixed" to catch extreme-cold
+cases too, because the threshold is correctly catching what it's
+actually good at catching (mild-temperature trips where non-temperature
+factors are doing unusually heavy lifting) — chasing a lower threshold
+just to catch capped-value scenarios would mean flagging routine extreme
+cold as "anomalous" by definition, which isn't useful. Documented as a
+known shape of the detector, not silently left unexplained.
+
+**Decision: `services/llm.py` returns `(text, error)` tuples, matching
+`services/geo.py`'s pattern from Phase 2, rather than raising
+exceptions.**
+Why: consistency across the two external-API service modules means a
+future contributor only needs to learn this error-handling pattern
+once. Both modules wrap third-party HTTP calls with the same "can fail
+for lots of reasons outside this app's control" profile, so the same
+shape fits both.
+
+**Decision: `/predictions/api/<id>/ask` takes free-form driver input and
+passes it into an LLM prompt, with only instruction-following as the
+prompt-injection defense (no input sanitization or output filtering).**
+Why: the blast radius is deliberately limited — the LLM has no tool
+access and can't take actions, so a successful injection only affects
+what text is shown back to the same user who wrote the prompt (see
+`SECURITY_AND_ACCESS.md` §7). Building a hardened defense (classifier-
+based guards, etc.) for an endpoint with this limited a blast radius
+would be effort spent on the wrong risk relative to what's actually
+exposed. Revisit if a future phase gives this endpoint tool access or
+cross-user data visibility — that would change the risk calculus
+entirely.
+
+**Decision: worst-case (colder) weather selection between origin and
+destination for RT-5, not an average.**
+Why: this is a cold-weather-focused range prediction tool — the failure
+mode that matters most is a driver arriving with less charge than
+expected, not more. Optimistically averaging two temperature readings
+would understate the risk in exactly the direction that matters. This
+mirrors treating "which failure mode is worse" as the deciding factor,
+same reasoning style as Phase 2's fail-loud-vs-fail-soft decision for
+`route_predict()`.
+
+**Decision: full multi-waypoint weather sampling (RT-6) was scoped out
+rather than attempted as part of RT-5.**
+Why: it has a real, distinct cost/rate-limit tradeoff against the free
+OpenWeatherMap tier (one API call per waypoint vs. two fixed calls per
+route) that deserves its own explicit decision once there's a real
+signal about API budget/tier, rather than silently defaulting to
+"more calls" or "fewer calls" inside an unrelated change.

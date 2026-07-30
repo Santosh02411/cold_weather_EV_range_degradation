@@ -26,15 +26,16 @@ this folder — keep IDs stable if you reorder/reprioritize.
 | RT-3 | Real-time vehicle telemetry integration (OBD-II / manufacturer APIs) where available, instead of manually entered battery %/speed | 🔲 Deferred — requires either physical OBD-II hardware access or manufacturer API partnerships (e.g. Tesla Fleet API approval), neither of which is obtainable inside a development sandbox. Revisit when there's a real vehicle/account to integrate against. |
 | DATA-1 | Wire OpenEV Data's real vehicle specs (battery capacity, rated range) into `seed_data.py` in place of the current hand-entered vehicle list | 🟡 Partial — `scripts/sync_openev_data.py` is written and ready, but couldn't be *executed* in this sandbox (no outbound network). Two entries (Tesla Model 3 Long Range, Hyundai IONIQ 5 Long Range) were spot-checked against cited real sources by hand and corrected in `seed_data.py`; the other 9 entries are unverified estimates, labeled as such in a comment at the top of `VEHICLES`. |
 | RT-4 | Replace the public OSRM demo server with a self-hosted instance or paid routing provider before any real deployment (the demo server's usage policy is "light use / evaluation only") | 🔲 Queued (Phase 5, alongside other production-hardening tickets) |
-| RT-5 | True segment-by-segment weather along a route (fetch conditions at multiple waypoints, not just the origin) for long trips that cross different weather zones | 🔲 Queued (Phase 3) |
 
 ## Phase 3 — AI/GenAI Layer
 
-| ID | Title |
-|---|---|
-| AI-1 | LLM-generated natural-language trip briefing, grounded in the real prediction output (RAG-style against SHAP explanation, not free generation) |
-| AI-2 | Conversational "why is my range degraded" assistant, grounded in the same explanation data `xai.py` already produces |
-| AI-3 | Anomaly detection + plain-language narration for unusual degradation patterns per vehicle |
+| ID | Title | Status |
+|---|---|---|
+| AI-1 | LLM-generated natural-language trip briefing, grounded in the real prediction output (RAG-style against SHAP explanation, not free generation) | ✅ Done — `services/ai_features.py::generate_trip_briefing`, `GET /predictions/api/<id>/briefing` |
+| AI-2 | Conversational "why is my range degraded" assistant, grounded in the same explanation data `xai.py` already produces | ✅ Done — `services/ai_features.py::answer_question`, `POST /predictions/api/<id>/ask` |
+| AI-3 | Anomaly detection + plain-language narration for unusual degradation patterns per vehicle | ✅ Done — `services/ai_features.py::detect_anomaly` (real, non-LLM check against the Phase 1 physics baseline) + `narrate_anomaly` (LLM phrasing only) |
+| RT-5 | True segment-by-segment weather along a route (fetch conditions at multiple waypoints, not just the origin) | 🟡 Partial — `/trip/api/route-predict` now samples weather at BOTH origin and destination and uses the colder (worst-case) reading; full multi-waypoint sampling for long routes is RT-6 below |
+| RT-6 | Full multi-waypoint weather sampling along long routes (beyond the current 2-point origin/destination sampling) | 🔲 Queued — real cost/rate-limit tradeoff against the free OpenWeatherMap tier; revisit if a paid weather tier is adopted |
 
 ## Phase 4 — New Features
 

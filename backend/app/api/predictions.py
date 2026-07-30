@@ -1,9 +1,10 @@
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, current_app
 from flask_login import login_required, current_user
 from ..models.prediction import Prediction
 from ..models.ev_vehicle import EVVehicle
 from ..ml.predict import get_prediction, get_available_models
 from ..ml.xai import get_shap_explanation
+from ..services.ai_features import generate_trip_briefing, answer_question, detect_anomaly, narrate_anomaly
 from .. import db
 
 predictions_bp = Blueprint('predictions', __name__)
@@ -71,11 +72,78 @@ def predict():
     db.session.add(prediction)
     db.session.commit()
 
+    anomaly = detect_anomaly(prediction.to_dict())
+
     return jsonify({
         'prediction': prediction.to_dict(),
         'explanation': explanation,
         'vehicle': vehicle.to_dict(),
+        'anomaly': anomaly,
     })
+
+
+def _load_owned_prediction(prediction_id):
+    """Shared ownership check for the AI endpoints below - a prediction
+    belongs to the user who made it, same rule as /api/history."""
+    prediction = Prediction.query.get(prediction_id)
+    if not prediction or prediction.user_id != current_user.id:
+        return None
+    return prediction
+
+
+@predictions_bp.route('/api/<int:prediction_id>/briefing', methods=['GET'])
+@login_required
+def briefing(prediction_id):
+    """AI-1: natural-language trip briefing for a saved prediction,
+    grounded in that prediction's own stored facts (never regenerated
+    or recomputed - same numbers the user already saw)."""
+    prediction = _load_owned_prediction(prediction_id)
+    if not prediction:
+        return jsonify({'error': 'Prediction not found'}), 404
+
+    vehicle = EVVehicle.query.get(prediction.vehicle_id)
+    explanation = prediction.get_shap_explanation()
+    text, source = generate_trip_briefing(
+        current_app.config, prediction.to_dict(),
+        vehicle.to_dict() if vehicle else {}, explanation
+    )
+    return jsonify({'briefing': text, 'source': source})
+
+
+@predictions_bp.route('/api/<int:prediction_id>/ask', methods=['POST'])
+@login_required
+def ask(prediction_id):
+    """AI-2: answer a free-form question about a saved prediction,
+    grounded in that prediction's own facts only."""
+    prediction = _load_owned_prediction(prediction_id)
+    if not prediction:
+        return jsonify({'error': 'Prediction not found'}), 404
+
+    data = request.get_json() or {}
+    question = data.get('question', '')
+
+    vehicle = EVVehicle.query.get(prediction.vehicle_id)
+    explanation = prediction.get_shap_explanation()
+    text, source = answer_question(
+        current_app.config, prediction.to_dict(),
+        vehicle.to_dict() if vehicle else {}, explanation, question
+    )
+    return jsonify({'answer': text, 'source': source})
+
+
+@predictions_bp.route('/api/<int:prediction_id>/anomaly', methods=['GET'])
+@login_required
+def anomaly_check(prediction_id):
+    """AI-3: re-run the (real, non-LLM) anomaly check for a saved
+    prediction and optionally narrate it in natural language."""
+    prediction = _load_owned_prediction(prediction_id)
+    if not prediction:
+        return jsonify({'error': 'Prediction not found'}), 404
+
+    anomaly = detect_anomaly(prediction.to_dict())
+    explanation = prediction.get_shap_explanation()
+    note, source = narrate_anomaly(current_app.config, anomaly, prediction.to_dict(), explanation)
+    return jsonify({'anomaly': anomaly, 'note': note, 'note_source': source})
 
 
 @predictions_bp.route('/api/history')

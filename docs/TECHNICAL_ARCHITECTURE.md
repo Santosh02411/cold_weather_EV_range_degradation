@@ -198,7 +198,98 @@ terrain-classification *logic* itself (pure Python, no network) was
 tested directly with synthetic elevation profiles. The network calls
 themselves need a real run-through before shipping.
 
-## 6. What Was Checked for Real Row-Level Data (and why it wasn't used)
+## 6. Phase 3 — AI Services (`services/llm.py`, `services/ai_features.py`)
+
+This is where actual LLM involvement enters the project for the first
+time — the original codebase branded itself "AI-powered" with zero
+generative-model calls anywhere. Phase 3 adds real ones, scoped
+deliberately narrow: **the LLM only ever phrases already-computed
+facts; it never computes a number.**
+
+### 6.1 `services/llm.py` — thin Anthropic Messages API wrapper
+
+- Reads `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` from Flask config
+  (`config.py`), defaulting to `claude-sonnet-5`.
+- `call_claude(app_config, system_prompt, user_message, max_tokens)`
+  returns `(text, error)` — never raises. Every caller in
+  `ai_features.py` checks `error` and falls back to a template instead
+  of surfacing a 500 to the user.
+- `is_configured()` lets callers skip the network call entirely when no
+  key is set, rather than attempting a call that would just fail.
+
+### 6.2 `services/ai_features.py` — the three Phase 3 features
+
+All three share `_facts_block()`, one function that renders a
+prediction's already-computed numbers (temperature, degradation %,
+predicted range, energy consumption, charging slowdown, confidence, and
+the SHAP/rule-based contributing factors from `xai.py`) into a single
+text block. Every prompt embeds this same block, with an explicit,
+repeated instruction (`GROUNDING_RULES`): never invent, adjust, or
+recompute a number that isn't in the block; if asked about something
+the block doesn't cover, say so rather than guess. This is the
+"RAG-style, not free generation" grounding requested for this phase —
+the "retrieval" step is simply this app's own already-correct ML
+pipeline output, not a vector search, since the relevant facts are
+already fully known and structured by the time the LLM is called.
+
+**AI-1 (`generate_trip_briefing`):** 3-5 sentence natural-language
+summary. Falls back to a template built from `xai.py`'s existing
+rule-based `summary` field, not a from-scratch fallback string.
+
+**AI-2 (`answer_question`):** free-form Q&A scoped to one saved
+prediction's facts. The system prompt explicitly tells the model to
+redirect off-topic questions back to the prediction rather than answer
+from general knowledge or follow instructions embedded in the driver's
+question that would override the grounding rules (basic prompt-
+injection awareness, not a hardened defense — see `SECURITY_AND_ACCESS.md`
+§7 for what "hardened" would still require).
+
+**AI-3 (`detect_anomaly` + `narrate_anomaly`):** deliberately split into
+two functions on purpose. `detect_anomaly()` is pure arithmetic —
+compares the actual prediction against `physics.py`'s real-world-
+calibrated baseline for that temperature (from Phase 1) and flags a gap
+over 20 percentage points. **The LLM is never involved in deciding
+whether something is anomalous** — only `narrate_anomaly()`, called
+afterward and only when `detect_anomaly()` already flagged something,
+turns that real computation into a sentence. This split matters: an
+LLM asked "is this anomalous?" would be making a judgment call with no
+real grounding of its own, which is exactly the kind of ungrounded
+"looks like AI, isn't really" pattern this whole project has been
+correcting since Phase 1.
+
+### 6.3 New endpoints (`api/predictions.py`)
+
+- `GET /predictions/api/<id>/briefing`
+- `POST /predictions/api/<id>/ask` (body: `{"question": "..."}`)
+- `GET /predictions/api/<id>/anomaly`
+
+All three are ownership-checked (`_load_owned_prediction` — a
+prediction only returns data to the user who created it, matching the
+existing `/api/history` rule) and operate on a **saved** `Prediction`
+row's stored facts, not a fresh recomputation — so a briefing always
+describes the exact prediction the user is looking at, not a
+potentially-different one from re-running the model.
+
+`POST /predictions/api/predict` (the main prediction endpoint) now also
+returns an `anomaly` field on every response, computed automatically —
+the frontend surfaces a warning badge with an "Explain why" button when
+`anomaly.is_anomaly` is true (see `frontend/static/js/main.js`).
+
+### 6.4 Verification status
+
+Same limitation as Phase 2's `geo.py`: `llm.py`'s actual HTTP call to
+`api.anthropic.com` was written against the documented Messages API
+shape but could not be executed in this sandbox (no outbound network).
+**What was verified:** the full fallback path (`is_configured() ==
+False` → template generation) for all three features, end-to-end,
+including the real `detect_anomaly()` arithmetic against real feature
+inputs (see `PROJECT_WORKFLOW.md` for the exact test cases run — one
+that correctly did NOT flag as anomalous, one that correctly did).
+**What wasn't verified:** an actual round-trip to Claude with a real API
+key. Test this before enabling Phase 3 in any deployment with a real
+key configured.
+
+## 7. What Was Checked for Real Row-Level Data (and why it wasn't used)
 
 Before building the physics-informed hybrid, the following were
 evaluated as potential sources of real, row-level (per-trip) EV

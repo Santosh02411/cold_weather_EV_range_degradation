@@ -343,3 +343,129 @@ access, instead of hand-checked one at a time indefinitely.
   requirements.txt && python run.py`, then exercise both `/trip`'s
   existing manual simulator and the new route-based predictor through
   the actual UI before considering Phase 2 done.
+
+---
+
+# Phase 3 — AI/GenAI Layer
+
+## Step 1 — Decide what the LLM is and isn't allowed to do
+
+Before writing any code: the original project's core flaw (established
+back in Phase 1) was presenting ungrounded output as more solid than it
+was. Adding an LLM without a hard constraint would risk reintroducing
+exactly that problem in a new form — a fluent paragraph that quietly
+gets a number wrong is arguably worse than a fake `confidence: 0.85`,
+because it *reads* more convincing. So the very first thing written was
+`GROUNDING_RULES` in `ai_features.py` — the LLM only ever phrases
+numbers this app already computed, never generates or adjusts one. This
+constraint shaped every function that came after it, and is checked
+here first because it's the thing most worth getting right before any
+code review of the rest.
+
+## Step 2 — `services/llm.py`
+
+Thin wrapper around the Anthropic Messages API. Modeled directly on
+`services/geo.py`'s pattern from Phase 2 (return `(result, error)`
+tuples, never raise to the caller) for consistency across the two
+external-API service modules.
+
+**Constraint hit immediately, same as Phase 2:** no outbound network in
+this sandbox, so `call_claude()`'s actual HTTP call to
+`api.anthropic.com` could not be executed here. Written against the
+documented Messages API request/response shape (`system` + `messages`
+fields, `content` array of blocks with `type: 'text'`).
+
+## Step 3 — `services/ai_features.py`
+
+Built `_facts_block()` first (the shared grounding data every prompt
+uses), then the three features on top of it.
+
+**Tested what could actually be tested without network access** — the
+full fallback (no-API-key) path for all three functions, using the same
+`importlib`-based module loading pattern established in Phase 1 to
+bypass the Flask app factory's package-level imports:
+
+```
+BRIEFING (template):
+In today's conditions (-18°C), your Tesla Model 3 Long Range is predicted
+to lose about 64.8% of its rated range, giving roughly 112.6 km of usable
+range. Range decreased because of Extreme Cold Temperature, Cabin Heater
+Active, and Snow Conditions. (Generated from the prediction model
+directly — set ANTHROPIC_API_KEY for a more natural-language briefing.)
+```
+
+This confirmed the template fallback actually reuses `xai.py`'s real
+`summary` field rather than a disconnected hardcoded string, and that
+the whole call chain (predict → explain → brief) works end to end
+without a network dependency.
+
+**Anomaly threshold — first test case revealed a design gap, not a bug.**
+Tested `detect_anomaly()` against an intentionally extreme scenario
+(-25°C, 135 km/h, mountainous terrain, 9-year-old battery) expecting it
+to trigger. It didn't:
+```
+ANOMALY: {'is_anomaly': False, 'physics_baseline_pct': 50.0,
+          'predicted_pct': 65.0, 'deviation_pct': 15.0, ...}
+```
+Root cause (not a bug — a real property of the system): both the
+physics baseline (`physics.py`) and the ML prediction (`predict.py`)
+cap degradation at 65%, and at -25°C the baseline is already 50%. Two
+values both near their respective ceilings can't diverge by more than
+15 points no matter how extreme the other inputs get — the caps
+themselves limit the deviation. Re-tested with a *mild* temperature (5°C,
+where the physics baseline is naturally low) but the same extreme
+speed/terrain/battery-age stress:
+```
+ANOMALY: {'is_anomaly': True, 'physics_baseline_pct': 11.0,
+          'predicted_pct': 45.2, 'deviation_pct': 34.2,
+          'direction': 'worse_than_expected'}
+```
+This confirmed the detector works as intended — it's just that "extreme
+cold" isn't the scenario that produces large deviations, because
+extreme cold is exactly where the physics baseline is already high.
+Anomalies show up when the *other* factors (speed, terrain, battery
+age) do a lot of work relative to what temperature alone would predict
+— which is arguably the more useful case to catch anyway (a mild-weather
+trip that's unexpectedly bad is more actionable to flag than "it's very
+cold and also very bad," which the driver already expects). No code
+change was needed here — logged because the first test result looked
+like a bug and understanding *why* it wasn't one is worth recording so
+it isn't re-litigated later.
+
+## Step 4 — Wiring into `api/predictions.py` and the frontend
+
+Added three new ownership-checked endpoints (briefing/ask/anomaly) plus
+an `anomaly` field on the main `/api/predict` response. Added a
+`_load_owned_prediction()` helper rather than repeating the ownership
+check three times, after noticing the copy-paste risk while writing the
+second endpoint (same "check every caller" discipline from Phase 1's
+Step 5 audit, applied proactively this time instead of after the fact).
+
+Wired a briefing button, a Q&A input, and an anomaly warning badge into
+`main.js`'s `displayPredictionResult()`. Checked with `node --check`
+(available in this sandbox, unlike a live browser) to catch syntax
+errors — confirmed clean, but this is not the same as testing the DOM
+interaction/rendering in an actual browser, which wasn't possible here.
+
+## Step 5 — RT-5, segment-by-segment weather (queued from Phase 2)
+
+Upgraded `/trip/api/route-predict` from single-origin-point weather to
+sampling both origin and destination, using whichever is colder for the
+actual prediction (a deliberate worst-case choice — see `MEMORY.md`).
+Full multi-waypoint sampling for long routes was scoped out as ticket
+RT-6 rather than attempted here, because it has a real cost/rate-limit
+tradeoff against the free OpenWeatherMap tier this app defaults to that
+deserves its own decision, not a default assumption bundled into this
+change.
+
+## What Wasn't Tested — Phase 3 addendum
+
+- **The actual Anthropic API call in `llm.py`** — written against the
+  documented Messages API, not executed. This is the single most
+  important thing to verify (with a real `ANTHROPIC_API_KEY`) before
+  relying on the LLM-generated (non-template) versions of any Phase 3
+  feature.
+- **Frontend rendering in an actual browser** — JS syntax-checked via
+  `node --check`, but the briefing button / Q&A box / anomaly badge UI
+  was not visually verified in a browser DOM.
+- **The full Flask app** — same standing limitation from Phases 1-2.

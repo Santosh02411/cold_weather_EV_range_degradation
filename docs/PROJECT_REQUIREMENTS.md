@@ -102,6 +102,20 @@ native apps. These are candidate future phases, not current requirements.
 - Must run on SQLite for local/dev use and MySQL for production without
   code changes (already true via `SQLALCHEMY_DATABASE_URI`).
 
+### FR-9 — AI-Generated Explanations (Phase 3)
+- FR-9.1: The system MUST be able to generate a natural-language trip
+  briefing for any saved prediction, using only that prediction's own
+  computed values — never a number the LLM invents itself.
+- FR-9.2: The system MUST allow free-form questions about a specific
+  saved prediction, answered only from that prediction's facts.
+- FR-9.3: The system MUST detect predictions that deviate unusually far
+  from the real-world-calibrated baseline (FR-1.3) using a real
+  computation, not an LLM judgment call — the LLM may only narrate an
+  already-detected anomaly, never decide whether one exists.
+- FR-9.4: All three of the above MUST degrade gracefully (template-based
+  output, clearly labeled as such) when no LLM API key is configured,
+  rather than failing the request.
+
 ## 5. Data Requirements
 
 - DR-1: The temperature → degradation relationship used for training and
@@ -128,3 +142,27 @@ native apps. These are candidate future phases, not current requirements.
 5. All of the above is documented clearly enough that someone who didn't
    build it can understand *why* each decision was made, not just *what*
    was built. ✅ (this `docs/` folder)
+
+## 7. Success Criteria (Phase 2)
+
+1. Terrain is derived from a real, measured elevation profile instead
+   of a manual guess. ✅ (`services/geo.py`)
+2. Trip predictions can run against a real route (geocoded + routed),
+   not only a manually-entered distance. ✅ (`/trip/api/route-predict`)
+3. The UI never silently substitutes demo weather without saying so.
+   ✅ (`data_source` field + badge)
+4. At least one vehicle spec entry error is found and corrected against
+   a real cited source (not just re-affirmed as "probably fine"). ✅
+   (Tesla Model 3 Long Range, Hyundai IONIQ 5 Long Range)
+
+## 8. Success Criteria (Phase 3)
+
+1. At least one real LLM call path exists and is grounded such that it
+   cannot alter a computed number, only phrase it. ✅
+   (`services/ai_features.py`, `GROUNDING_RULES`)
+2. Anomaly detection is a real computation, not an LLM guess. ✅
+   (`detect_anomaly()` — pure arithmetic against the Phase 1 physics
+   baseline)
+3. Every AI feature has a non-LLM fallback that still returns useful,
+   clearly-labeled output. ✅ (template fallback path, tested end-to-end
+   without network access — see `PROJECT_WORKFLOW.md`)

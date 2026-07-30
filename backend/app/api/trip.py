@@ -127,12 +127,33 @@ def route_predict():
         terrain_source = 'fallback (elevation lookup unavailable)'
 
     api_key = current_app.config.get('OPENWEATHERMAP_API_KEY', 'demo')
-    if api_key and api_key != 'demo':
-        weather, error = fetch_openweathermap(origin_name, api_key)
-        if error:
-            weather = get_demo_weather(origin_name)
-    else:
-        weather = get_demo_weather(origin_name)
+
+    def _fetch_weather_for(place_name):
+        if api_key and api_key != 'demo':
+            w, err = fetch_openweathermap(place_name, api_key)
+            if err:
+                return get_demo_weather(place_name)
+            return w
+        return get_demo_weather(place_name)
+
+    # RT-5 (Phase 3): sample weather at BOTH ends of the route instead of
+    # only the origin. A real "segment-by-segment" weather model would
+    # sample at each significant waypoint, but that means one weather API
+    # call per waypoint - a real cost/rate-limit tradeoff for the free
+    # OpenWeatherMap tier this app defaults to. Two-point sampling is a
+    # middle ground: real for both ends of any route, not just one, at a
+    # fixed cost regardless of route length. Full multi-waypoint sampling
+    # is tracked as ticket RT-6 (see FEATURE_TICKET_LIST.md) for whenever
+    # that cost tradeoff is worth revisiting.
+    origin_weather = _fetch_weather_for(origin_name)
+    dest_weather = _fetch_weather_for(dest_name)
+
+    # Use whichever end is colder for the prediction: colder conditions
+    # are the binding constraint on range for a cold-weather-focused tool
+    # (arriving with less charge than the optimistic estimate is a worse
+    # failure mode for the driver than the reverse), so this is a
+    # deliberate worst-case choice, not an average.
+    weather = origin_weather if origin_weather['temperature_c'] <= dest_weather['temperature_c'] else dest_weather
 
     battery_pct = float(data.get('battery_percentage', 100))
     heater_usage = bool(data.get('heater_usage', True))
@@ -195,6 +216,16 @@ def route_predict():
         'weather': {
             'temperature_c': weather['temperature_c'],
             'data_source': weather.get('data_source', 'unknown'),
+            'used_for_prediction': 'origin' if weather is origin_weather else 'destination',
+            'note': 'worst-case (colder) of the two sampled points was used for the prediction',
+            'origin_sample': {
+                'temperature_c': origin_weather['temperature_c'],
+                'data_source': origin_weather.get('data_source', 'unknown'),
+            },
+            'destination_sample': {
+                'temperature_c': dest_weather['temperature_c'],
+                'data_source': dest_weather.get('data_source', 'unknown'),
+            },
         },
     })
 
