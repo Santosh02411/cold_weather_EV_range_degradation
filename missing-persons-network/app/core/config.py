@@ -33,6 +33,18 @@ class Settings(BaseSettings):
     # Frontend URL, used to build links in emails (verification, password reset)
     FRONTEND_URL: str = "http://localhost:5173"
 
+    # Email sending. "console" (default) just logs emails -- no setup needed,
+    # safe for anyone cloning this project. Switch to "smtp" and fill in the
+    # SMTP_* settings to actually send real emails (see .env.example for a
+    # Gmail App Password walkthrough).
+    EMAIL_BACKEND: str = "console"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_USE_TLS: bool = True
+
     # Photo uploads
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_BYTES: int = 5 * 1024 * 1024  # 5MB

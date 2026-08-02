@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.case import CaseStatus
 from app.schemas.geo import GeoPoint
@@ -49,6 +49,21 @@ class CaseRead(BaseModel):
     assigned_authority_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("last_seen_location", mode="before")
+    @classmethod
+    def _convert_geography(cls, value):
+        # Reading a Case back from the DB gives a raw geoalchemy2 WKBElement
+        # for this column, not a {lat, lng} shape -- this was previously
+        # missing entirely (geo_service.from_geography() existed but was
+        # never actually called from here), so every case-detail fetch
+        # crashed with a Pydantic validation error the moment it tried to
+        # build a GeoPoint straight from a WKBElement's attributes.
+        from app.services.geo_service import from_geography
+
+        if isinstance(value, dict):
+            return value  # already {lat, lng} -- e.g. round-tripped in tests
+        return from_geography(value)
 
 
 class CaseListItem(BaseModel):

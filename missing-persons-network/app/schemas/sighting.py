@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.sighting import SightingStatus
 from app.schemas.geo import GeoPoint
@@ -35,6 +35,18 @@ class SightingRead(BaseModel):
     reviewed_by: uuid.UUID | None
     reviewed_at: datetime | None
     created_at: datetime
+
+    @field_validator("location", mode="before")
+    @classmethod
+    def _convert_geography(cls, value):
+        # Same issue as CaseRead.last_seen_location -- see that validator's
+        # comment for the full explanation. A raw WKBElement from the DB
+        # needs explicit conversion; it was never wired up before.
+        from app.services.geo_service import from_geography
+
+        if isinstance(value, dict):
+            return value
+        return from_geography(value)
 
 
 class SightingQueueItem(SightingRead):
