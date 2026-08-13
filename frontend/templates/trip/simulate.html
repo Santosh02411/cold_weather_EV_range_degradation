@@ -26,14 +26,24 @@
                         <input type="text" name="destination" class="form-control" placeholder="e.g. Boston" required>
                     </div>
                 </div>
-                <div class="form-row">
+                <div class="form-group">
+                    <label class="form-check">
+                        <input type="checkbox" name="use_real_route" id="useRealRoute" checked onchange="toggleRouteMode()">
+                        <span style="font-size:13px;color:var(--text-secondary)">
+                            Use real route, terrain & weather (geocodes your locations, fetches an
+                            actual driving route + elevation profile + current weather instead of
+                            manual entry below)
+                        </span>
+                    </label>
+                </div>
+                <div class="form-row" id="manualFields" style="display:none">
                     <div class="form-group">
                         <label class="form-label">Distance (km)</label>
-                        <input type="number" name="distance_km" class="form-control" value="200" min="1" required>
+                        <input type="number" name="distance_km" class="form-control" value="200" min="1">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Temperature (°C)</label>
-                        <input type="number" name="temperature_c" class="form-control" value="-5" step="0.1" required>
+                        <input type="number" name="temperature_c" class="form-control" value="-5" step="0.1">
                     </div>
                 </div>
                 <div class="form-row">

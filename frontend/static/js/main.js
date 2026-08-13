@@ -412,29 +412,68 @@ async function loadRecommendations(data) {
 }
 
 // ═══ Trip Simulation ═══
+function toggleRouteMode() {
+    const useReal = document.getElementById('useRealRoute')?.checked;
+    const manualFields = document.getElementById('manualFields');
+    if (manualFields) manualFields.style.display = useReal ? 'none' : 'grid';
+}
+
 async function submitTrip(event) {
     event.preventDefault();
     const form = event.target;
-    const data = {
-        vehicle_id: parseInt(form.vehicle_id.value),
-        source: form.source.value,
-        destination: form.destination.value,
-        distance_km: parseFloat(form.distance_km.value),
-        temperature_c: parseFloat(form.temperature_c.value),
-        speed_kmh: parseFloat(form.speed_kmh.value),
-        heater_usage: form.heater_usage?.checked ?? true,
-        num_passengers: parseInt(form.num_passengers?.value || 1),
-        battery_percentage: parseFloat(form.battery_percentage?.value || 100),
-    };
+    const useRealRoute = form.use_real_route?.checked ?? true;
+    const btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    const originalBtnText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block;vertical-align:middle;"></span> Simulating...';
 
     try {
-        const result = await apiFetch('/trip/api/simulate', {
-            method: 'POST', body: JSON.stringify(data),
-        });
+        let result, usedRealRoute;
+        if (useRealRoute) {
+            // Phase 2/3: real geocoding + real route + real elevation-
+            // derived terrain + real weather, instead of manually typed
+            // distance/temperature.
+            const data = {
+                vehicle_id: parseInt(form.vehicle_id.value),
+                source: form.source.value,
+                destination: form.destination.value,
+                speed_kmh: parseFloat(form.speed_kmh.value),
+                heater_usage: form.heater_usage?.checked ?? true,
+                num_passengers: parseInt(form.num_passengers?.value || 1),
+                battery_percentage: parseFloat(form.battery_percentage?.value || 100),
+            };
+            result = await apiFetch('/trip/api/route-predict', {
+                method: 'POST', body: JSON.stringify(data),
+            });
+            usedRealRoute = true;
+        } else {
+            const data = {
+                vehicle_id: parseInt(form.vehicle_id.value),
+                source: form.source.value,
+                destination: form.destination.value,
+                distance_km: parseFloat(form.distance_km.value),
+                temperature_c: parseFloat(form.temperature_c.value),
+                speed_kmh: parseFloat(form.speed_kmh.value),
+                heater_usage: form.heater_usage?.checked ?? true,
+                num_passengers: parseInt(form.num_passengers?.value || 1),
+                battery_percentage: parseFloat(form.battery_percentage?.value || 100),
+            };
+            result = await apiFetch('/trip/api/simulate', {
+                method: 'POST', body: JSON.stringify(data),
+            });
+            usedRealRoute = false;
+        }
+
         const t = result.trip;
         const container = document.getElementById('tripResult');
         if (container) {
-            container.innerHTML = `
+            const routeInfo = usedRealRoute ? `
+                <div class="alert alert-success" style="margin-bottom:12px;font-size:13px">
+                    🗺️ Real route: ${result.route.distance_km} km, ~${result.route.duration_min} min &nbsp;|&nbsp;
+                    ⛰️ Terrain: ${result.terrain.type} (${result.terrain.source})&nbsp;|&nbsp;
+                    🌡️ Weather: ${result.weather.temperature_c}°C (${result.weather.data_source})
+                </div>` : '';
+            container.innerHTML = routeInfo + `
                 <div class="animate-slide stats-grid">
                     <div class="stat-card"><div class="stat-icon amber">🔋</div>
                         <div><div class="stat-value">${t.estimated_battery_usage_pct}%</div><div class="stat-label">Battery Usage</div></div></div>
@@ -448,6 +487,9 @@ async function submitTrip(event) {
         }
     } catch (e) {
         showAlert('danger', e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalBtnText;
     }
 }
 

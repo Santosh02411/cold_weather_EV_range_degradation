@@ -522,3 +522,128 @@ Python 3.13 in this sandbox (still no outbound network here). If it
 still fails, the most robust fallback is installing Python 3.11 or 3.12
 instead (both have full, long-standing wheel coverage for this entire
 stack) rather than continuing to chase Python 3.13 compatibility.
+
+**Outcome:** confirmed fixed — user re-ran `pip install -r
+requirements.txt` and it installed cleanly, pulling prebuilt wheels
+(scikit-learn 1.7.1, numpy 2.1.3, pandas 2.3.1, scipy 1.16.1, etc.) as
+intended. One unrelated dependency-conflict warning appeared
+(`llama-index-core` wanting a different `tqdm` version) — that's from
+an unrelated package already in the user's global environment, not from
+this project, and not a blocker.
+
+## Fix 2 — `python run.py` crashed on startup: `ImportError: cannot import name 'get_models_dir'`
+
+**Reported:** immediately after the successful `pip install`, running
+`python run.py` failed with
+`ImportError: cannot import name 'get_models_dir' from 'app.ml.train'`.
+
+**Root cause — a real gap in Phase 1's own audit process.** Phase 1's
+Step 5 (see above) explicitly grepped for every caller of the renamed
+`get_models_dir` → `get_models_root` function specifically to avoid
+this exact failure mode, and found/fixed `predict.py` and `xai.py`. That
+grep was scoped to `backend/app` — but `run.py` lives in `backend/`,
+one level above `backend/app`, so it was silently outside the search
+scope and never checked. `run.py` imports `get_models_dir` directly
+from `app.ml.train` (not through `predict.py`, where a backward-compat
+alias *was* added), so it hit the rename directly.
+
+This is worth being direct about: the Phase 1 doc explicitly framed
+that audit step as "the discipline of checking every caller, not just
+the files you edited" — and then the audit itself had a scope gap that
+produced exactly the failure it was meant to prevent. Logged plainly
+rather than glossed over, because the lesson here isn't "don't make
+mistakes," it's "grep the whole repo, not the directory that feels
+relevant."
+
+**Second issue found in the same file while fixing the first:** even
+after fixing the import, `run.py`'s first-run training block would have
+crashed anyway — it iterated `train_all_models()`'s return value as
+`results[name]['r2_score']` / `results[name]['mae']`, which was the
+*old* (pre-Phase-1) flat return shape. Phase 1 changed
+`train_all_models()` to return a richer metadata dict
+(`meta['metrics'][name]['validation_set']['r2_score']`, etc. — see
+`TECHNICAL_ARCHITECTURE.md` §2.2). `admin.py`'s `/admin/retrain` route
+was checked against this shape change back in Phase 1 (it just does
+`jsonify(results)`, which doesn't break on a different shape) — but
+`run.py`'s console-print loop, which *does* index into specific keys,
+was not checked, for the same reason as the import: it's outside
+`backend/app`.
+
+**Fix:** updated `run.py` to import `get_models_root` (no alias
+needed — fixed at the source instead of patching around it again) and
+to read the new nested metrics structure, including printing the
+real-world calibration MAE alongside the per-model validation metrics
+so the first-run console output actually shows the number that matters
+most (see Phase 1's `PROJECT_REQUIREMENTS.md` success criteria).
+
+**Re-audited the whole repository, not just `backend/app`, this time** —
+searched every `.py` file for `get_models_dir`, every caller of
+`train_all_models()`, every use of `FEATURE_COLS`, and every place
+indexing `['r2_score']`/`['mae']` directly. Confirmed `admin.py` was
+already fine (Phase 1), `predict.py`/`xai.py` were already fine (Phase
+1), and `run.py` was the only remaining gap — now fixed. No other
+scope-gap callers found.
+
+**Verified:** re-ran `run.py`'s exact (now-fixed) first-run training
+logic end-to-end in this sandbox (via the same `importlib`-bypass
+technique used throughout Phases 1-3, since the Flask app factory still
+can't run here) and confirmed it trains and prints correctly:
+```
+[ROBOT] Training ML models for the first time...
+  linear_regression: R2=0.9681, MAE=2.9432
+  random_forest: R2=0.9827, MAE=2.051
+  gradient_boosting: R2=0.9873, MAE=1.8307
+  Real-world calibration MAE (vs 13 published benchmarks): 11.98 pp
+[OK] ML models trained and saved!
+```
+This confirms the training logic itself; it does not confirm the
+subsequent `app.run(...)` / Flask server startup, which still hasn't
+been exercised for real. That remains the next real risk if something
+else was missed the same way.
+
+## Fix 3 — Phase 2/3 backend features existed but weren't reachable from the UI
+
+**Reported:** user got the app running successfully and asked directly
+why none of the new features seemed to show up.
+
+**Root cause:** a real gap, not a misunderstanding — `/trip/api/route-predict`
+(real geocoding, real route, real elevation-derived terrain, real
+weather; built and tested at the API level in Phase 2) was never wired
+to `trip/simulate.html`. The form still called the old
+`/trip/api/simulate` endpoint with manually-typed distance and
+temperature, exactly as it did before Phase 2. This shipped without
+being caught because every verification step in Phases 2-3 tested the
+*API layer* directly (via `importlib`-bypassed Python, `py_compile`,
+`node --check` on the JS in isolation) — nothing in this sandbox could
+click through the actual rendered pages, so "is this endpoint called
+from anywhere in the UI" was never actually checked as its own
+question. Every other Phase 3 addition (weather badge, AI briefing/ask,
+anomaly badge) happened to get wired into an *existing* result-rendering
+function while building it, so those were reachable; route-predict was
+Phase 2's only *new* endpoint needing *new* UI, and that step was
+missed.
+
+**Fix:** `trip/simulate.html` now has a "Use real route, terrain &
+weather" checkbox (checked by default). When checked, the manual
+distance/temperature fields hide and `submitTrip()` calls
+`/trip/api/route-predict`; the result panel shows the real distance,
+terrain source, and weather source it got back. Unchecked falls back to
+the original manual `/trip/api/simulate` flow, preserved rather than
+removed, in case someone wants to enter an already-known distance and
+skip the geocoding/routing calls.
+
+**Re-audited for the same gap elsewhere:** grepped `frontend/` for
+`route-predict`, `briefing`, `/ask`, `anomaly`, and `data_source` to
+confirm every other Phase 2/3 endpoint is actually called from
+somewhere in the UI. All four were already wired (briefing/ask/anomaly
+into `predictions/index.html`'s result rendering, `data_source` into
+both the weather page and the now-fixed trip page). `route-predict` was
+the only orphaned one.
+
+**What this means going forward:** "the code runs and returns the right
+JSON" and "a user can actually reach this feature by clicking through
+the app" are different claims, and this sandbox can only verify the
+first one. Every future phase should end with an explicit "grep the
+frontend for every new endpoint path" check, the same way Phase 1
+established "grep every caller of a renamed function" — logged here as
+a standing practice, not just a one-off fix.
