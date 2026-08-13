@@ -647,3 +647,550 @@ first one. Every future phase should end with an explicit "grep the
 frontend for every new endpoint path" check, the same way Phase 1
 established "grep every caller of a renamed function" — logged here as
 a standing practice, not just a one-off fix.
+
+---
+
+# Phase 4 (partial) — UX-1, UX-3, ML-4, SEC-3
+
+Four specific tickets, picked by the project owner from the full
+Phase 4/5 list rather than working through it in order.
+
+## UX-1 + UX-3 — confidence bar and physics baseline comparison
+
+Both turned out to be pure-frontend changes plus one small backend
+addition. `detect_anomaly()` (Phase 3) already computed a real physics
+baseline for every prediction, and `get_prediction()` (Phase 1) already
+returned `confidence_note`/`models_in_ensemble`/
+`physics_baseline_degradation_pct` — none of it reached the API
+response, because `predictions.py`'s `/api/predict` only ever returned
+`prediction.to_dict()` (the DB columns) plus `explanation`/`vehicle`/
+`anomaly`. Added a `model_details` object to the response carrying the
+already-computed fields that don't have DB columns, rather than adding
+a schema migration for what's fundamentally display-only data.
+`displayPredictionResult()` renders a color-coded confidence bar and a
+"typical for this temperature vs. your conditions" comparison line
+from it. No bugs surfaced here — the data was already correct and just
+needed exposing.
+
+## SEC-3 — real credential generation
+
+Replaced the hardcoded `admin123`/`demo123` in `seed_data.py` with:
+`ADMIN_PASSWORD`/`DEMO_PASSWORD` env vars if set, otherwise a real
+random password via Python's `secrets` module (not `random`, which
+isn't cryptographically secure), printed once to the console.
+`SEED_DEMO_USER=false` skips creating the demo account entirely, since
+a well-known-username public demo login is arguably a bigger real risk
+than an admin account with a random password. Tested the resolution
+logic directly (env var present → used as-is; absent → generated,
+correct length, different each call) — straightforward, no bugs.
+
+## ML-4 — version-aware predict.py with instant rollback
+
+This one surfaced the most interesting bug of the four.
+
+Added `list_versions()`, `get_active_version_info()`,
+`get_active_model_dir()`, and `set_active_version()` to `train.py`.
+Changed `predict.py`'s `load_model()` to read from
+`get_active_model_dir()` (the versioned directory
+`current_version.json` points at) instead of always reading the flat
+`saved_models/` copy, with the in-memory model cache keyed by
+`(active_dir, model_name)` specifically so switching versions can't
+serve a stale cached model from the previously-active one.
+
+**First end-to-end test revealed a serious pre-existing bug, not
+something this change introduced.** Testing the full lifecycle (train
+v1 → predict → train v2 with different data → predict → roll back to
+v1 → predict, asserting the rollback prediction matches v1 exactly)
+produced **4 trained versions from what should have been 2 explicit
+`train_all_models()` calls**. Investigating: `get_prediction()` always
+tries to load every model in `ENSEMBLE_MODEL_NAMES`, including
+`'xgboost'` — and `load_model()`'s fallback logic was
+"if this specific requested model's file doesn't exist, retrain."
+On any install without xgboost (this sandbox included, and anyone who
+skipped that optional dependency), `xgboost.pkl` can never exist, so
+**every single call to `get_prediction()` was silently triggering a
+full retrain and writing a brand new version directory to disk** —
+this bug has existed since Phase 1, just never surfaced before because
+nothing previously counted how many versions existed after repeated
+prediction calls.
+
+This is a real production risk: on a live server handling real
+prediction traffic without xgboost installed, this would mean
+retraining on every request (real latency cost) and an unbounded
+number of version directories accumulating on disk indefinitely — not
+hypothetical, confirmed by literally reproducing it (11 prediction
+calls against a fresh install would have produced 11 versions before
+the fix, confirmed to produce exactly 1 after).
+
+**Fix:** `load_model()` now checks whether *any* model has ever been
+trained (via `REQUIRED_MODEL_FILES` — the three models every version is
+guaranteed to include, not the optional xgboost one) before deciding to
+auto-train. A single optional model being unavailable is now reported
+as unavailable, not treated as "nothing has been trained yet."
+
+**Verified fixed** with the same test: fresh install → first prediction
+call trains exactly once → ten more prediction calls → still exactly
+one version. Then re-verified the actual ML-4 feature on top of the
+fix: trained a second version with different synthetic data (seed 999
+instead of 42), confirmed the two versions produce different
+predictions (45.2% vs 46.2% for the same input), rolled back to v1 via
+`set_active_version(1)`, and confirmed the next prediction exactly
+matches the original v1 prediction (45.2%) — rollback genuinely works,
+not just "returns success."
+
+Wired an admin UI (`/admin` → "Model Versions" table) listing every
+version with its held-out test MAE, real-world calibration MAE, and an
+"Activate" button per non-active row.
+
+---
+
+# Phase 4 (continued) — SEC-1, SEC-2, RT-4, FEAT-6, FEAT-4
+
+Five more tickets from the same Phase 4/5 list, again picked directly by
+the project owner.
+
+## SEC-1 + SEC-2 — rate limiting and CORS scoping
+
+Added Flask-Limiter with per-route-tier limits (`RATELIMIT_AUTH`,
+`RATELIMIT_PREDICT`, `RATELIMIT_AI`, plus a global default), and scoped
+`CORS_ALLOWED_ORIGINS` (defaults to `*` for local dev, now with a loud
+`app.logger.warning` if left there, rather than silently permissive).
+Both are config-driven so the actual limits/origins never need a code
+change to adjust per environment. Straightforward; no bugs surfaced.
+Neither `flask_limiter` nor `flask_sqlalchemy` are installed in this
+sandbox, so the actual rate-limiting behavior (does a 6th login attempt
+in a minute really get blocked?) could not be executed here — same
+standing limitation as the rest of the Flask-app-level code.
+
+## RT-4 — configurable routing provider
+
+Split `get_route()` into a provider-selection wrapper plus
+`_get_route_osrm()`/`_get_route_ors()`, driven by `ROUTING_PROVIDER`
+config. Verified the *branching* logic offline with `unittest.mock` --
+patched both underlying functions and confirmed: default config calls
+OSRM, `ROUTING_PROVIDER=ors` with a key calls ORS, and `ROUTING_PROVIDER=ors`
+*without* a key correctly falls back to OSRM rather than failing. The
+actual HTTP behavior of either provider remains untested here, same
+network limitation as every other `geo.py`/`llm.py` integration.
+Self-hosting instructions (a real `docker run` sequence for OSRM) were
+written from OSRM's documented setup process, not run end-to-end --
+flagged as such rather than presented as verified.
+
+## FEAT-6 + FEAT-4 — real outcome tracking and crowdsourcing
+
+Built these together since they share one pipeline
+(`services/recalibration.py`): FEAT-6 lets a user report what actually
+happened after a prediction they already made
+(`Prediction.actual_range_km`); FEAT-4 lets anyone report a real drive's
+outcome standalone (`CommunityRangeReport`), no prior prediction needed.
+Both convert into the same feature-row + real-degradation-label shape
+`train.py` already expects, then blend into synthetic training data for
+retraining.
+
+**A real design bug caught and fixed before it ever ran:** the first
+version of `retrain_with_real_data()` computed a `real_data_used` info
+dict and attached it to `train_all_models()`'s **return value** after
+the call returned. But `train_all_models()` writes `metadata.json` to
+disk *during* the call, before returning -- so that info would have
+looked like it was being recorded, while actually only ever existing in
+a Python variable that vanishes once the caller returns. This is
+exactly the kind of thing that would pass a shallow read-through (the
+code "looks like" it records provenance) while being silently wrong on
+disk. Caught by tracing the actual write order rather than trusting
+that attaching a field to a dict called `metadata` meant it became part
+of the saved metadata. Fixed by adding an `extra_metadata` parameter to
+`train_all_models()` that gets merged into the dict *before* the
+`json.dump()` call, and verified via an actual round-trip: called
+`retrain_with_real_data()`, then independently re-read the resulting
+`metadata.json` file from disk and asserted `real_data_used` was
+present in the *file*, not just the in-memory return value.
+
+**Offline-tested the full pipeline** using lightweight fake stand-ins
+for `Prediction`/`CommunityRangeReport`/`EVVehicle` (plain Python
+objects with a `.query.filter().all()` shape mimicking SQLAlchemy's
+interface closely enough to exercise the real
+`collect_real_outcomes()`/`retrain_with_real_data()` code paths without
+needing `flask_sqlalchemy`, which isn't installed in this sandbox):
+- Verified the degradation-from-actual math directly (6 cases: normal,
+  zero degradation, partial battery, exceeding rated range, invalid
+  zero-percent battery, extreme-loss clipping) -- all correct.
+- Verified `collect_real_outcomes()` correctly builds rows from both a
+  fake prediction-with-actual-range and a fake community report,
+  computing 50% degradation for both from their respective inputs by
+  hand-checked arithmetic, matching the function's output exactly.
+- Verified `real_data_summary()`'s accuracy figure: with the model's own
+  stored prediction at 45.0% and the real computed outcome at 50.0%,
+  correctly reported a 5.0 percentage-point MAE.
+- Verified the `min_real_samples` guard: 3 fake real samples (below the
+  default threshold of 10) correctly raised `ValueError` instead of
+  silently retraining on synthetic data alone under a misleading
+  "used real data" label.
+- Verified the full success path: 12 fake real samples correctly
+  produced `raw_real_samples=12`, `weighted_real_rows_in_training=60`
+  (12 × the default `real_weight=5`), trained successfully, and -- this
+  is the fix above being re-verified in context -- `real_data_used` was
+  confirmed present in the actual `metadata.json` file written to disk,
+  not just the function's return value.
+
+**What wasn't tested:** the actual `/community` page rendering in a
+browser, the `POST /community/api/reports` endpoint's Flask-level
+request handling (validation logic was written carefully but not
+exercised through a real HTTP request), and the interaction between
+real Flask-SQLAlchemy relationships (`db.relationship`, foreign keys)
+and the new `CommunityRangeReport` model -- the offline test above
+proves the *data transformation logic* is correct, not that the ORM
+layer itself is wired correctly end to end. That remains the next real
+risk if something was missed, consistent with every other phase's
+"what wasn't tested" caveat.
+
+---
+
+# Phase 4 (continued) — FEAT-1, FEAT-2, FEAT-3, FEAT-5, RT-6, INFRA-1/2/3
+
+The remaining tickets from the Phase 4/5 list, all requested together.
+Given the scope (8 sub-features), this entry is more consolidated than
+earlier phase logs -- the same standards (real code, real bugs logged,
+honest about what's untested) apply, just written more concisely.
+
+**Real bugs found and fixed before they ever shipped:**
+
+1. **Missing `numpy` import in `geo.py`.** Added waypoint-selection math
+   (RT-6) that uses `np.radians`/`np.searchsorted`/etc., but `geo.py`
+   had never needed numpy before this and didn't import it. Caught
+   immediately by the first offline test run (`NameError: name 'np' is
+   not defined`), not by inspection -- exactly the value of actually
+   running new code instead of only reading it.
+2. **APScheduler `next_run_time=None` bug (FEAT-3).** First draft of
+   `scheduler.py` passed `next_run_time=None` to `add_job()`, intending
+   "wait for the first normal interval, don't run immediately on boot."
+   That's not what the parameter means in APScheduler -- `None` there
+   means "don't automatically schedule a run at all." Caught by
+   re-reading APScheduler's own semantics before shipping (not by
+   execution -- `apscheduler` isn't installed in this sandbox either),
+   fixed by removing the argument entirely, since the trigger's default
+   behavior already does what was intended.
+3. **`loadRealDataStats()` was defined but never called on page load**
+   (a leftover from the previous round, caught while wiring FEAT-5's
+   fleet dashboard next to it). It only ran when a user clicked its
+   manual "Refresh" button, meaning that admin panel section would sit
+   on "Loading…" indefinitely otherwise. Fixed by wiring all three data
+   loaders (model versions, fleet stats, real-data stats) to
+   `DOMContentLoaded` together.
+
+**What was actually tested, and how:**
+- `select_route_waypoints()` (RT-6) and terrain classification (carried
+  from Phase 2) against synthetic route data -- 10 tests, all passing.
+- Battery health trend math (FEAT-1) -- 6 tests, including sign
+  handling, clipping, and out-of-order input.
+- The degradation-from-actual formula (FEAT-6, carried from the
+  previous round) -- 8 tests, now converted from ad-hoc verification
+  into a permanent regression suite.
+- The full train → predict → retrain-different-data → rollback →
+  predict-again lifecycle -- 4 slower end-to-end tests, including one
+  written specifically as a regression guard for the runaway-retraining
+  bug found in the previous round (asserts exactly 1 version exists
+  after 6 prediction calls).
+- The scheduler's three guard conditions (disabled, debug-reloader
+  parent process, missing dependency) -- verified with a fake Flask app
+  object, all three correct.
+- Open Charge Map response parsing -- verified against a realistic mock
+  payload matching their documented schema.
+- **Total: 42 tests, all passing**, run via a minimal manual test
+  runner since `pytest` itself isn't installed in this sandbox (see
+  `tests/README.md` for the exact honesty framing on this -- the tests
+  were executed, `pytest` itself as a tool was not).
+
+**What was NOT tested (the honest list, not glossed over):**
+- The actual live HTTP calls in `charging_stations.py` (Open Charge
+  Map) and the coordinate-based weather lookup added for RT-6/FEAT-3 --
+  same standing network limitation as `geo.py`/`llm.py`.
+- Flask-Mail actually sending an email, or APScheduler actually running
+  a background job -- neither `flask_mail` nor `apscheduler` are
+  installed in this sandbox. The logic each depends on (cooldown
+  timing, location grouping, the "log what would send" fallback when
+  mail isn't configured) was traced by hand but not executed.
+- Flask-Migrate's actual `flask db init/migrate/upgrade` commands --
+  wired correctly (verified: `migrate.init_app(app, db)` is a
+  one-line, low-risk call), but never run against a real database.
+  Deliberately did NOT hand-write Alembic migration files to simulate
+  having run `flask db migrate` -- autogenerated migration files that
+  were never actually generated by the tool would be a worse kind of
+  dishonesty than just saying "run these three commands yourself."
+- `test_api_smoke.py` -- written, not run (needs `flask_sqlalchemy`).
+  This is, cumulatively across this entire project, the single most
+  valuable remaining verification step: an actual HTTP request hitting
+  an actual Flask route backed by an actual database has not happened
+  even once during this project's development. Every other layer
+  (ML, physics, data transformations, scheduler guards, math) has real
+  test coverage now; the web-framework glue holding it together does
+  not yet.
+
+---
+
+# Phase 4 (final round) — forecast predictions, share/PDF, model comparison, confidence tooltip
+
+Four smaller, more contained items (UX-4 through UX-7).
+
+**Real bug found and fixed:** `get_forecast()`'s demo-mode fallback
+hardcoded every forecast slot's date to `2024-01-...` regardless of the
+actual current date. This was invisible before because nothing used
+the forecast route for anything date-sensitive -- once UX-4 wired it
+into "plan for a future date," a demo-mode user would have seen
+forecast options dated over a year in the past, which would have been
+an obviously broken, confusing experience. Fixed to generate dates
+relative to `datetime.utcnow()`. Also added a `precipitation` field
+(mapped from OpenWeatherMap's free-text `weather` condition) to both
+the live and demo forecast paths, since the prediction model needs the
+categorical none/rain/snow value, not free text -- the forecast route
+never needed this before because nothing consumed its output for a
+prediction.
+
+**UX-6 (model comparison)** turned out to need almost no new code --
+`predict.py`'s `get_prediction()` already computed every model's
+individual raw prediction internally (`all_predictions`, used to derive
+the ensemble confidence) and simply never returned it. Exposing it as
+`individual_predictions` in the response was the entire backend change;
+verified end-to-end (three models' individual values + the ensemble
+result all present and consistent).
+
+**UX-5 (share/PDF)** added `Prediction.share_token` -- generated lazily
+(on first "Share" click, not at prediction time, since most predictions
+are never shared) via `secrets.token_urlsafe(32)`, matching the same
+cryptographically-secure-random pattern established for SEC-3's
+credential generation. The public share view deliberately does NOT
+extend `base.html` (confirmed `base.html` handles an unauthenticated
+`current_user` gracefully, so it technically could have) -- an outside
+visitor clicking a shared link shouldn't see the full authenticated app
+shell with nav links to pages they can't use; a clean standalone page
+is the more honest UX for that audience. The PDF export reuses
+`reports.py`'s existing reportlab pattern rather than inventing a new
+one.
+
+**UX-7 (confidence tooltip)** was the smallest change -- a `title`
+attribute on an info icon next to the confidence label. No logic
+change, just making an existing, real, already-computed signal
+(ensemble disagreement, since Phase 1) legible instead of a bare
+percentage.
+
+**Verification:** all four are frontend-heavy or thin backend additions
+on top of already-tested logic (physics, prediction, PDF generation
+pattern already used elsewhere). Re-ran the full 42-test pure-logic
+suite after these changes -- still 42/42 passing, confirming nothing
+regressed. The forecast-to-prediction flow, the share link's public
+route, and the PDF generation itself were code-reviewed and
+syntax-checked but not exercised through a real HTTP request, for the
+same standing reason as everything else Flask-dependent in this
+project: no `flask_sqlalchemy` in this sandbox. Same "run it for real"
+caveat applies as always.
+
+---
+
+# Authentication & User Management (new feature category)
+
+Full category: email verification, forgot/reset password, OTP login,
+Google/GitHub OAuth, session management, login history, device
+management, profile picture upload, notification preferences, delete
+account.
+
+**Real bug found and fixed:** `parse_device_label()`'s first version
+checked for `'mac os'` in the user-agent string before checking for
+`'iphone'`/`'ipad'`. Real iPhone/iPad user-agent strings contain the
+literal substring "like Mac OS X" (part of how iOS identifies its
+WebKit lineage) -- every iPhone/iPad would have been labeled "Safari on
+macOS" in the sessions/device list. Caught by the very first offline
+test run against a real iPhone UA string, not by inspection. Fixed by
+checking iOS first; regression-tested in `tests/test_auth_tokens.py`
+with both a real iPhone UA (expects "iOS") and a real Mac UA (still
+expects "macOS", confirming the fix didn't just invert the bug).
+
+**Real regression caught before shipping:** refactoring login into a
+shared `_complete_login()` helper (used by password, OTP, and OAuth
+login) initially hardcoded `login_user(user, remember=True)`, silently
+ignoring the login form's "remember me" checkbox that used to work
+correctly in the pre-refactor code. Caught by re-reading the diff
+against the original behavior rather than by execution. Fixed by
+threading `remember` through `_complete_login()` (defaulting True for
+OTP/OAuth, which have no such checkbox) into both `login_user()` and
+the new `create_session()`'s `flask_session.permanent` flag -- the
+second half of this (session cookie permanence) was a second, related
+issue in the same area: an early draft of `create_session()` set
+`flask_session.permanent = True` unconditionally, which would have
+weakened "remember me" unchecked for the underlying session cookie
+even after the first fix. Caught in the same review pass, not two
+separate incidents.
+
+**Design choices worth recording:**
+- OTP is email-delivered, not SMS -- no SMS provider (Twilio etc.) is
+  integrated in this project, and adding one is a real infrastructure
+  and cost decision that wasn't part of this ask. Flask-Mail is already
+  wired (FEAT-3), so OTP-via-email reuses existing infrastructure
+  rather than adding a new one.
+- Real server-side session tracking (`UserSession` + a `before_request`
+  hook validating the session cookie against it) was added specifically
+  because Flask-Login's default cookie-only session has nothing to list
+  or revoke -- a "sessions page" backed only by Flask-Login's default
+  behavior would be cosmetic, not real. Revoking a session now takes
+  effect on that device's very next request.
+- OAuth account linking matches by email if a provider ID isn't already
+  linked, rather than always creating a new account -- avoids a
+  confusing "why do I have two accounts with the same email" outcome
+  for someone who registered with a password and later tries Google
+  sign-in.
+- Account deletion anonymizes (nulls `user_id` on) `CommunityRangeReport`
+  rows instead of deleting them, and required making that column
+  nullable (a real, deliberate schema change, not an oversight) --
+  covered further in `docs/MEMORY.md`.
+
+**Verified (offline, no Flask/DB needed):** `services/auth_tokens.py`'s
+entire surface -- token uniqueness, OTP generation/hashing/verification
+(including a wrong-code rejection case and a None-input case), OTP
+leading-zero preservation (a real edge case: an OTP like "003456" must
+stay a 6-character string), expiry checks, and device label parsing
+(6 cases including the iPhone regression above) -- 16 tests, all
+passing, added to the permanent suite (`tests/test_auth_tokens.py`).
+Full suite is now 58/58 passing.
+
+**Not verified (same standing limitation as every Flask-dependent
+piece in this project):** actual email delivery, the real OAuth
+handshake with Google/GitHub (written against Authlib's documented
+patterns and each provider's documented API shape, not executed --
+no live client IDs or network in this sandbox), the `before_request`
+session-revocation hook's real behavior under a live request, and
+profile picture upload's actual file-save path. All of it is
+consistent with the standing "no flask_sqlalchemy in this sandbox"
+limitation restated at every phase -- not a new gap, the same one.
+
+---
+
+# EV Vehicle Database (new feature category)
+
+Search, filter by brand/price/battery/vehicle type/fast-charging,
+detailed specs page, vehicle images, favorites, recently viewed.
+
+**Real orphan caught and fixed:** built `GET /vehicles/api/favorites`
+(list a user's favorited vehicles) plus the heart-toggle buttons to
+favorite/unfavorite individual vehicles -- but never actually wired a
+way to VIEW the favorites list anywhere in the UI. This is the exact
+same class of bug caught with the trip route-predict endpoint back in
+Phase 4: a real, correct backend feature with no path for a user to
+actually reach it. Caught by the same discipline established after
+that incident -- explicitly grepping the frontend for every new
+endpoint before considering a feature done, not just building the
+backend and moving on. Fixed with a "My favorites only" checkbox on the
+vehicle list page (a server-side filter, consistent with how every
+other filter on that page already works, rather than a separate
+JS-rendered view backed by the JSON endpoint).
+
+**Pricing data: same honesty standard as Phase 2's DATA-1 spec
+corrections.** Rather than fabricate a plausible-looking price for all
+12 seeded vehicles, only added `price_usd` where a real search result
+matched the exact trim in the seed data (Tesla Model 3 Long Range:
+$47,490; Model Y Long Range: $44,990). Every other vehicle's
+`price_usd` is explicitly `None` with a comment explaining why (BYD
+models aren't sold new in the US market, so a USD MSRP isn't a
+meaningful figure; other entries' search results covered a *different*
+trim than what's in the seed data, e.g. IONIQ 5 SE Standard Range vs.
+the seeded Long Range, or Leaf S vs. the seeded Leaf e+). A wrong price
+attached with false confidence is worse than an honest `None`.
+
+**`supports_fast_charging` is a derived property, not a stored column**
+-- computed from `max_charging_power_kw >= 50kW` (a real, named
+industry-common threshold for what counts as DC fast charging vs. AC
+Level 2 home charging) rather than a separate boolean a future data
+update could let drift out of sync with the actual charging spec.
+Regression-tested (`test_vehicle_fast_charging.py`, 5 cases: above/at/
+below threshold, None, zero) using the same disclosed-duplication
+pattern as `test_recalibration_math.py`, since `ev_vehicle.py` imports
+`db.Model` and can't be loaded in this sandbox.
+
+**Vehicle image upload** reuses the same validated-upload pattern as
+the Authentication category's profile picture upload (extension check,
+size check, Pillow content verification) -- duplicated rather than
+shared across the two blueprints for ~15 lines, with a comment noting
+where to extract a shared `services/uploads.py` if a third upload
+feature shows up.
+
+**Verified:** full test suite now 63/63 passing (5 new fast-charging
+tests). All 12 seed vehicle entries confirmed via AST inspection to
+have both new fields present. **Not verified** (standing sandbox
+limitation): the actual image upload file-save path, the search/filter
+SQL queries against a real database, and the favorites/recently-viewed
+upsert logic under real concurrent requests.
+
+---
+
+# Battery Intelligence (new feature category)
+
+Nine of eleven requested items implemented; two deliberately declined
+with an explanation rather than faked -- see below.
+
+**Grounded in real research before writing any code**, same discipline
+as Phase 1's `physics.py`: searched for real citable data on cold-start
+energy penalties before implementing anything (found: EVhype reporting
+a ~6-mile winter trip can use roughly double the energy of a warm-
+weather equivalent, fading on longer trips; Midtronics on preconditioning
+recovering 20-30 points of range). The existing Geotab ~2.3%/year
+calendar-degradation figure, already cited in Phase 1's `train.py`, was
+reused as the default SOH decline rate rather than re-deriving a new
+number from nothing.
+
+**Declined, with reasoning, not silently skipped:**
+- **Battery Voltage Prediction** and **Internal Resistance Estimation**
+  were NOT implemented. Both would require real per-chemistry cell/pack
+  electrochemical data (voltage-vs-SOC discharge curves, measured
+  internal resistance vs. temperature/age for a specific pack design)
+  that this project has no access to. Producing numbers for either
+  would mean presenting a fabricated formula as a real prediction --
+  exactly the failure mode Phase 1 was built to move away from
+  (`train.py`'s original synthetic-data-only ML model). Declining these
+  two, explicitly, is more consistent with this project's own standard
+  than inventing a plausible-looking formula would have been. Flagged
+  this exact concern the first time this feature list was reviewed,
+  before any implementation work began this round -- not a new
+  position adopted only once the code got hard to write.
+
+**Real reuse over new formulas, where a real model already existed:**
+- **Battery Efficiency Curve** doesn't compute energy consumption with
+  a separate equation -- it sweeps temperature through the ALREADY-
+  TRAINED prediction model (`ml/predict.py::get_prediction`) and
+  returns what the real model actually says at each point, guaranteeing
+  the curve can never disagree with what a real prediction for the same
+  vehicle would show.
+- **Battery Heating Requirement** doesn't build a new thermal model --
+  it reads the 'Cabin Heater Active' factor's `contribution_pct` that
+  `ml/xai.py` already computes for a given prediction, and translates
+  that share into a kWh figure using the same prediction's own energy
+  output. If a prediction didn't attribute anything to HVAC, this
+  correctly returns zero rather than guessing.
+- **Battery Temperature Analysis** does NOT model internal battery
+  temperature (no real per-vehicle thermal telemetry exists to ground
+  that) -- it aggregates REAL logged ambient weather lookups
+  (`models/dataset.py::WeatherLog`, which every weather check this app
+  has ever made writes to) into exposure statistics for a city, and
+  explicitly reports its own sample size so a thin sample doesn't look
+  more authoritative than it is.
+
+**Real bug caught before it would have run:** `vehicles.py`'s new
+battery-intelligence code called `datetime.utcnow()` but the file had
+never needed the `datetime` import before this round -- would have been
+a `NameError` on the very first request to the (now-extended)
+battery-health endpoint. Caught by reading the diff for missing
+imports before testing, the same category of miss as `geo.py`'s
+missing `numpy` import earlier in Phase 4, now checked for
+proactively rather than only caught by luck of running the code.
+
+**Verified offline:** all four pure functions in
+`battery_intelligence.py` (SOH estimation, aging classification,
+years-to-EOL projection, cold-start multiplier) -- 19 tests, including
+edge cases (zero/negative decline rate, already-below-threshold SOH,
+None inputs, the multiplier's fade-to-1.0 behavior by 25km). The
+efficiency curve and heating estimate functions were verified by
+running them against the REAL trained model end-to-end (not mocked),
+confirming the curve is monotonic-ish with temperature and the heating
+estimate correctly extracts a real `contribution_pct` and produces a
+sane kWh figure. Full suite: 82/82 passing.
+
+**Not verified** (standing sandbox limitation, same as every phase):
+the new `/vehicles/api/<id>/efficiency-curve` and
+`/weather/api/temperature-exposure` endpoints' real HTTP behavior, and
+the Chart.js efficiency-curve rendering in an actual browser.

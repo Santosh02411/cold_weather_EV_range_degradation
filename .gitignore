@@ -22,9 +22,13 @@ backend/app/ml/saved_models/
 
 # Uploaded user files
 data/uploads/
+frontend/static/uploads/profile_pictures/*
+!frontend/static/uploads/profile_pictures/.gitkeep
 
 # Editor/OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+frontend/static/uploads/vehicle_images/*
+!frontend/static/uploads/vehicle_images/.gitkeep

@@ -198,6 +198,37 @@ terrain-classification *logic* itself (pure Python, no network) was
 tested directly with synthetic elevation profiles. The network calls
 themselves need a real run-through before shipping.
 
+**RT-4 (Phase 4): routing provider is now configurable**, not hardcoded
+to OSRM's public demo server. `ROUTING_PROVIDER` (config.py) selects
+between:
+- `osrm` (default) + `OSRM_BASE_URL` — point at a self-hosted OSRM
+  instance instead of the public demo server. Minimal self-hosting
+  starting point (requires downloading a real OSM extract for your
+  region, which needs real network access this project's own sandbox
+  doesn't have — untested here, standard OSRM setup otherwise):
+  ```bash
+  # Example for a small region -- swap the .osm.pbf URL for your area
+  # from https://download.geofabrik.de/
+  wget https://download.geofabrik.de/north-america/us-northeast-latest.osm.pbf
+  docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-extract -p /opt/car.lua /data/us-northeast-latest.osm.pbf
+  docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-partition /data/us-northeast-latest.osrm
+  docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-customize /data/us-northeast-latest.osrm
+  docker run -t -i -p 5000:5000 -v "${PWD}:/data" osrm/osrm-backend osrm-routed --algorithm mld /data/us-northeast-latest.osrm
+  # then: OSRM_BASE_URL=http://localhost:5000
+  ```
+- `ors` + `ORS_API_KEY` — use OpenRouteService's free tier instead of
+  OSRM entirely (sign up at https://openrouteservice.org/dev/#/signup).
+  No self-hosting needed; still a real usage-tier limit to be aware of
+  (their published free plan, not unlimited).
+
+`get_route()` picks the provider from `provider_config` (passed as
+Flask's `app.config` from `trip.py`) at call time, with `ors` silently
+falling back to `osrm` if `ORS_API_KEY` isn't set — verified with a
+mocked offline test (both branches call the expected underlying
+function); the actual HTTP behavior of each provider is still subject
+to the same "written against documented API, not live-tested" caveat as
+everything else in this module.
+
 ## 6. Phase 3 — AI Services (`services/llm.py`, `services/ai_features.py`)
 
 This is where actual LLM involvement enters the project for the first

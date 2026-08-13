@@ -51,5 +51,15 @@
         <div class="card-header"><h3 class="card-title">📊 Charging Time vs Temperature</h3></div>
         <div class="chart-container"><canvas id="chargingChart"></canvas></div>
     </div>
+
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">🔌 Find Real Charging Stations</h3></div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Powered by Open Charge Map — real, community-maintained station data.</p>
+        <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <input type="text" id="stationSearchInput" placeholder="City or address, e.g. Chicago, IL" style="flex:1" />
+            <button class="btn" onclick="findChargingStations()">Search</button>
+        </div>
+        <div id="stationsResult"></div>
+    </div>
 </div>
 {% endblock %}

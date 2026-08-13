@@ -36,6 +36,26 @@
             <button type="submit" class="btn btn-primary btn-lg" style="width:100%;margin-top:8px;">🔐 Sign In</button>
         </form>
 
+        <div style="text-align:center;margin:14px 0;">
+            <a href="{{ url_for('auth.otp_login') }}" style="font-size:13px;color:var(--accent-blue);text-decoration:none;">📧 Sign in with a one-time email code instead</a>
+        </div>
+
+        {% if oauth_providers %}
+        <div style="display:flex;align-items:center;gap:10px;margin:16px 0;">
+            <div style="flex:1;height:1px;background:var(--border-color);"></div>
+            <span style="font-size:12px;color:var(--text-muted);">or</span>
+            <div style="flex:1;height:1px;background:var(--border-color);"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+            {% if 'google' in oauth_providers %}
+            <a href="{{ url_for('auth.oauth_login', provider='google') }}" class="btn btn-outline" style="width:100%;text-align:center;">Continue with Google</a>
+            {% endif %}
+            {% if 'github' in oauth_providers %}
+            <a href="{{ url_for('auth.oauth_login', provider='github') }}" class="btn btn-outline" style="width:100%;text-align:center;">Continue with GitHub</a>
+            {% endif %}
+        </div>
+        {% endif %}
+
         <div class="auth-footer">
             Don't have an account? <a href="{{ url_for('auth.register') }}">Create one</a>
         </div>

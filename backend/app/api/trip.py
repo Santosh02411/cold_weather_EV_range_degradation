@@ -1,9 +1,19 @@
 from flask import Blueprint, render_template, request, jsonify, current_app
 from flask_login import login_required, current_user
 from ..models.prediction import TripSimulation
+from ..models.trip_plan import SavedTrip, TripPlan
 from ..models.ev_vehicle import EVVehicle
 from ..ml.predict import get_prediction
-from ..services.geo import geocode_place, get_route, get_elevation_profile, classify_terrain_from_elevations, select_route_waypoints
+from ..services.geo import (
+    geocode_place, get_route, get_route_alternatives, get_elevation_profile,
+    classify_terrain_from_elevations, select_route_waypoints, elevation_profile_stats,
+)
+from ..services import traffic as traffic_mod
+from ..services import route_optimization
+from ..services import route_planning
+from ..services.driving_style import analyze_driving_style
+from ..services.energy_model import energy_curve, most_efficient_speed_kmh
+from ..services.destination_recommender import recommend_destinations, CATEGORY_TAGS
 from .weather import fetch_openweathermap, fetch_openweathermap_by_coords, get_demo_weather
 from .. import db
 
@@ -113,6 +123,13 @@ def route_predict():
     route = get_route(origin_lat, origin_lon, dest_lat, dest_lon, provider_config=current_app.config)
     if route is None:
         return jsonify({'error': 'Could not fetch a driving route between these locations'}), 502
+
+    # Traffic-aware Prediction / ETA Prediction: real traffic-aware
+    # duration when routed through Google (see geo.py's
+    # _get_route_google), a documented time-of-day heuristic otherwise
+    # (see services/traffic.py).
+    departure_time = data.get('departure_time')  # 'now', a unix timestamp, or omitted
+    traffic_report = traffic_mod.apply_traffic(route['duration_min'], route=route, departure_time=None)
 
     elevations = get_elevation_profile(route['coordinates'])
     if elevations:
@@ -237,6 +254,12 @@ def route_predict():
             'type': terrain_type,
             'elevation_gain_m': elevation_gain_m,
             'source': terrain_source,
+            'profile': elevation_profile_stats(elevations) if elevations else None,
+        },
+        'traffic': traffic_report,
+        'eta': {
+            'driving_duration_min': route['duration_min'],
+            'traffic_adjusted_duration_min': traffic_report['adjusted_duration_min'],
         },
         'weather': {
             'temperature_c': weather['temperature_c'],
@@ -254,3 +277,273 @@ def trip_history():
     trips = TripSimulation.query.filter_by(user_id=current_user.id)\
         .order_by(TripSimulation.created_at.desc()).limit(20).all()
     return jsonify([t.to_dict() for t in trips])
+
+
+@trip_bp.route('/api/route-optimize', methods=['POST'])
+@login_required
+def route_optimize():
+    """Route Optimization: fetch multiple candidate routes between two
+    places and recommend both the fastest and the most range-efficient
+    one, instead of only ever returning a single fixed route (see
+    services/route_optimization.py)."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    origin_name, dest_name = data.get('source'), data.get('destination')
+    if not origin_name or not dest_name:
+        return jsonify({'error': 'source and destination place names are required'}), 400
+
+    vehicle = EVVehicle.query.get(data.get('vehicle_id'))
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+
+    origin_lat, origin_lon, origin_display = geocode_place(origin_name, provider_config=current_app.config)
+    if origin_lat is None:
+        return jsonify({'error': f"Could not geocode source '{origin_name}'"}), 502
+    dest_lat, dest_lon, dest_display = geocode_place(dest_name, provider_config=current_app.config)
+    if dest_lat is None:
+        return jsonify({'error': f"Could not geocode destination '{dest_name}'"}), 502
+
+    routes = get_route_alternatives(origin_lat, origin_lon, dest_lat, dest_lon, provider_config=current_app.config)
+    if not routes:
+        return jsonify({'error': 'Could not fetch any route between these locations'}), 502
+
+    # Elevation lookups are real extra API calls, so only fetch them for
+    # a bounded number of alternatives (typically <=3 from OSRM).
+    elevation_gains = []
+    for route in routes:
+        elevations = get_elevation_profile(route['coordinates'], provider_config=current_app.config)
+        _, gain = classify_terrain_from_elevations(elevations) if elevations else (None, None)
+        elevation_gains.append(gain)
+
+    base_wh_per_km = vehicle.energy_consumption_wh_km or 170
+    ranked = route_optimization.optimize_routes(routes, base_wh_per_km, elevation_gains)
+    for r in ranked:
+        r.pop('coordinates', None)  # not needed in this summary response
+
+    return jsonify({
+        'origin': origin_display or origin_name,
+        'destination': dest_display or dest_name,
+        'routes': ranked,
+    })
+
+
+@trip_bp.route('/plan')
+@login_required
+def plan_page():
+    vehicles = EVVehicle.query.filter_by(is_active=True).all()
+    saved = SavedTrip.query.filter_by(user_id=current_user.id).order_by(SavedTrip.created_at.desc()).all()
+    return render_template('trip/plan.html', vehicles=vehicles, saved_trips=saved)
+
+
+@trip_bp.route('/api/plan', methods=['POST'])
+@login_required
+def plan_trip():
+    """Multi-stop Trip Planning + Round Trip Planning + ETA Prediction:
+    plan an itinerary across an arbitrary ordered list of stops (see
+    services/route_planning.py for the leg-by-leg + charging-insertion
+    logic), and log the result as a TripPlan."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    vehicle = EVVehicle.query.get(data.get('vehicle_id'))
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+
+    stops = data.get('stops') or []
+    if not isinstance(stops, list) or len(stops) < 2:
+        return jsonify({'error': "'stops' must be a list of at least 2 place names"}), 400
+
+    consumption_multiplier = 1.0
+    driving_style = data.get('driving_style')
+    if driving_style == 'auto':
+        style_report = analyze_driving_style(current_user.id)
+        if style_report['status'] == 'ok':
+            consumption_multiplier = style_report['consumption_multiplier']
+            driving_style = style_report['driving_style']
+        else:
+            driving_style = None
+
+    result = route_planning.plan_multi_stop_trip(
+        vehicle, stops,
+        round_trip=bool(data.get('round_trip', False)),
+        start_battery_pct=float(data.get('battery_percentage', 100)),
+        heater_usage=bool(data.get('heater_usage', True)),
+        num_passengers=int(data.get('num_passengers', 1)),
+        battery_age_years=float(data.get('battery_age_years', 0)),
+        speed_kmh=float(data.get('speed_kmh', 80)),
+        ambient_temperature_c=float(data.get('temperature_c', 0)),
+        fast_charging=bool(data.get('fast_charging', True)),
+        consumption_multiplier=consumption_multiplier,
+        provider_config=current_app.config,
+        departure_time=data.get('departure_time'),
+    )
+    if 'error' in result:
+        return jsonify(result), 502
+
+    plan = TripPlan(
+        user_id=current_user.id, vehicle_id=vehicle.id,
+        round_trip=result['round_trip'], driving_style=driving_style,
+        total_distance_km=result['total_distance_km'],
+        total_driving_duration_min=result['total_driving_duration_min'],
+        total_charging_time_min=result['total_charging_time_min'],
+        total_eta_min=result['total_eta_min'],
+        num_charging_stops=result['num_charging_stops'],
+        feasible=result['feasible'],
+    )
+    plan.stops = result['stops']
+    plan.legs = result['legs']
+    db.session.add(plan)
+    db.session.commit()
+
+    response = plan.to_dict()
+    response['final_battery_pct'] = result['final_battery_pct']
+    return jsonify(response)
+
+
+@trip_bp.route('/api/plans')
+@login_required
+def plan_history():
+    """Trip History for multi-stop plans specifically (kept separate
+    from /api/history's single-leg TripSimulation log -- see
+    models/trip_plan.py's docstring for why)."""
+    plans = TripPlan.query.filter_by(user_id=current_user.id)\
+        .order_by(TripPlan.created_at.desc()).limit(20).all()
+    return jsonify([p.to_dict(include_legs=False) for p in plans])
+
+
+@trip_bp.route('/api/plans/<int:plan_id>')
+@login_required
+def plan_detail(plan_id):
+    plan = TripPlan.query.filter_by(id=plan_id, user_id=current_user.id).first()
+    if not plan:
+        return jsonify({'error': 'Trip plan not found'}), 404
+    return jsonify(plan.to_dict(include_legs=True))
+
+
+@trip_bp.route('/api/saved-trips', methods=['GET'])
+@login_required
+def list_saved_trips():
+    """Saved Trips: bookmarked trip configurations for quick reuse --
+    distinct from trip HISTORY (an automatic log of trips already
+    simulated/planned), these are trips a user explicitly wants to
+    save and re-plan later with fresh conditions."""
+    trips = SavedTrip.query.filter_by(user_id=current_user.id).order_by(SavedTrip.created_at.desc()).all()
+    return jsonify([t.to_dict() for t in trips])
+
+
+@trip_bp.route('/api/saved-trips', methods=['POST'])
+@login_required
+def create_saved_trip():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    name = (data.get('name') or '').strip()
+    stops = data.get('stops') or []
+    vehicle_id = data.get('vehicle_id')
+    if not name or not isinstance(stops, list) or len(stops) < 2 or not vehicle_id:
+        return jsonify({'error': "'name', 'vehicle_id', and at least 2 'stops' are required"}), 400
+    if not EVVehicle.query.get(vehicle_id):
+        return jsonify({'error': 'Vehicle not found'}), 404
+
+    trip = SavedTrip(user_id=current_user.id, vehicle_id=vehicle_id, name=name,
+                      round_trip=bool(data.get('round_trip', False)))
+    trip.stops = stops
+    db.session.add(trip)
+    db.session.commit()
+    return jsonify(trip.to_dict()), 201
+
+
+@trip_bp.route('/api/saved-trips/<int:trip_id>', methods=['DELETE'])
+@login_required
+def delete_saved_trip(trip_id):
+    trip = SavedTrip.query.filter_by(id=trip_id, user_id=current_user.id).first()
+    if not trip:
+        return jsonify({'error': 'Saved trip not found'}), 404
+    db.session.delete(trip)
+    db.session.commit()
+    return jsonify({'deleted': trip_id})
+
+
+@trip_bp.route('/api/driving-style')
+@login_required
+def driving_style():
+    """Driving Style Analysis for the current user, based on their own
+    prediction/trip history (see services/driving_style.py)."""
+    return jsonify(analyze_driving_style(current_user.id))
+
+
+@trip_bp.route('/api/energy-curve')
+@login_required
+def energy_by_speed():
+    """Speed-based Energy Consumption: a Wh/km-vs-speed curve for
+    charting, based on a vehicle's baseline consumption (see
+    services/energy_model.py)."""
+    vehicle = EVVehicle.query.get(request.args.get('vehicle_id', type=int))
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+    base_wh_per_km = vehicle.energy_consumption_wh_km or 170
+    return jsonify({
+        'vehicle_id': vehicle.id,
+        'base_wh_per_km': base_wh_per_km,
+        'most_efficient_speed_kmh': most_efficient_speed_kmh(),
+        'curve': energy_curve(base_wh_per_km),
+    })
+
+
+@trip_bp.route('/api/recommend-destinations')
+@login_required
+def recommend_destinations_route():
+    """Destination Recommendation: real nearby places reachable within
+    the vehicle's SAFE range (accounting for the cold-weather
+    degradation model, not just raw EPA range) from a given location
+    (see services/route_planning.safe_range_km() and
+    services/destination_recommender.py)."""
+    place = request.args.get('place')
+    lat = request.args.get('lat', type=float)
+    lon = request.args.get('lon', type=float)
+    category = request.args.get('category', 'tourism')
+    vehicle = EVVehicle.query.get(request.args.get('vehicle_id', type=int))
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+
+    resolved_place = None
+    if lat is None or lon is None:
+        if not place:
+            return jsonify({'error': 'Provide either lat/lon or a place name'}), 400
+        lat, lon, resolved_place = geocode_place(place, provider_config=current_app.config)
+        if lat is None:
+            return jsonify({'error': f"Could not geocode '{place}'"}), 502
+
+    battery_pct = request.args.get('battery_percentage', 100, type=float)
+    temperature_c = request.args.get('temperature_c', 0, type=float)
+
+    features = {
+        'temperature_c': temperature_c, 'humidity': 60, 'wind_speed_kmh': 15, 'precipitation': 'none',
+        'battery_percentage': battery_pct, 'vehicle_speed_kmh': 80, 'hvac_usage': True, 'terrain_type': 'flat',
+        'battery_age_years': 0, 'battery_capacity_kwh': vehicle.battery_capacity_kwh,
+        'epa_range_km': vehicle.epa_range_km, 'vehicle_weight_kg': vehicle.vehicle_weight_kg,
+    }
+    prediction = get_prediction(features, 'random_forest')
+    effective_range_km = prediction['predicted_range_km'] * (battery_pct / 100)
+    margin_pct = current_app.config.get('TRIP_SAFETY_MARGIN_PCT', 15)
+    # Halved, since a "reachable destination" implies driving there AND
+    # back on the same charge -- see round_trip_distance_km in each
+    # result, which reflects this same halving in reverse.
+    safe_radius_km = route_planning.safe_range_km(effective_range_km, margin_pct) / 2
+
+    destinations = recommend_destinations(lat, lon, safe_radius_km, category=category)
+    if destinations is None:
+        return jsonify({'error': 'Could not fetch destination recommendations right now'}), 502
+
+    return jsonify({
+        'location': {'lat': lat, 'lon': lon, 'resolved_place': resolved_place},
+        'category': category,
+        'available_categories': list(CATEGORY_TAGS.keys()),
+        'safe_one_way_radius_km': round(safe_radius_km, 1),
+        'safety_margin_pct': margin_pct,
+        'destinations': destinations,
+    })

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Sessions & Devices — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🔐 Sessions & Devices{% endblock %}
+{% block content %}
+<div style="max-width:700px;">
+    <div class="card animate-fade">
+        <div class="card-header">
+            <h3 class="card-title">Active Sessions</h3>
+            <button onclick="loadUserSessions()" class="btn btn-outline btn-sm">Refresh</button>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+            These are the devices currently signed into your account. Revoking a session signs that device out immediately.
+        </p>
+        <div id="sessionsList">
+            <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+        </div>
+    </div>
+
+    <div class="card animate-fade" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">Recent Login History</h3></div>
+        <div id="loginHistoryList">
+            <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadUserSessions() {
+    const container = document.getElementById('sessionsList');
+    try {
+        const result = await apiFetch('/api/sessions');
+        const sessions = result.sessions || [];
+        container.innerHTML = sessions.map(s => `
+            <div class="card" style="margin-bottom:8px;padding:12px;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <strong>${s.device_label || 'Unknown device'}</strong>
+                    ${s.is_current ? '<span class="badge badge-green" style="margin-left:6px;">this device</span>' : ''}
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+                        ${s.ip_address || ''} · via ${s.login_method} · last active ${new Date(s.last_active_at).toLocaleString()}
+                    </div>
+                </div>
+                ${s.is_current ? '' : `<button class="btn btn-sm btn-outline" onclick="revokeUserSession(${s.id})">Revoke</button>`}
+            </div>`).join('') || '<p style="color:var(--text-muted);font-size:13px;">No active sessions.</p>';
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't load sessions: ${e.message}</p>`;
+    }
+}
+
+async function revokeUserSession(sessionId) {
+    if (!confirm('Sign this device out?')) return;
+    try {
+        await apiFetch(`/api/sessions/${sessionId}/revoke`, { method: 'POST' });
+        loadUserSessions();
+    } catch (e) {
+        showAlert('danger', e.message);
+    }
+}
+
+async function loadLoginHistory() {
+    const container = document.getElementById('loginHistoryList');
+    try {
+        const result = await apiFetch('/api/login-history');
+        const history = result.history || [];
+        if (history.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No history yet.</p>';
+            return;
+        }
+        const rows = history.map(h => `
+            <tr>
+                <td>${h.success ? '✅' : '❌'}</td>
+                <td>${h.method}</td>
+                <td>${h.ip_address || '—'}</td>
+                <td>${new Date(h.created_at).toLocaleString()}</td>
+                <td style="font-size:11px;color:var(--text-muted);">${h.failure_reason || ''}</td>
+            </tr>`).join('');
+        container.innerHTML = `<table><thead><tr><th></th><th>Method</th><th>IP</th><th>When</th><th>Note</th></tr></thead><tbody>${rows}</tbody></table>`;
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't load history: ${e.message}</p>`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadUserSessions();
+    loadLoginHistory();
+});
+</script>
+{% endblock %}

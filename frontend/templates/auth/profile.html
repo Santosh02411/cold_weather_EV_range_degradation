@@ -3,7 +3,34 @@
 {% block page_title %}My Profile{% endblock %}
 {% block content %}
 <div style="max-width:600px;">
+
+    {% if not current_user.email_verified %}
+    <div class="alert alert-warning" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>⚠️ Your email isn't verified yet.</span>
+        <form method="POST" action="{{ url_for('auth.resend_verification') }}" style="margin:0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline">Resend verification email</button>
+        </form>
+    </div>
+    {% endif %}
+
     <div class="card animate-fade">
+        <div class="card-header"><h3 class="card-title">🖼️ Profile Picture</h3></div>
+        <div style="display:flex;align-items:center;gap:16px;">
+            {% if current_user.profile_picture_path %}
+            <img src="{{ url_for('static', filename=current_user.profile_picture_path) }}" alt="Profile picture" style="width:64px;height:64px;border-radius:50%;object-fit:cover;">
+            {% else %}
+            <div class="user-avatar" style="width:64px;height:64px;font-size:24px;">{{ current_user.username[0]|upper }}</div>
+            {% endif %}
+            <form method="POST" action="{{ url_for('auth.upload_profile_picture') }}" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="file" name="picture" accept="image/jpeg,image/png,image/webp" required>
+                <button type="submit" class="btn btn-sm btn-outline">Upload</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card animate-fade" style="margin-top:20px;">
         <div class="card-header">
             <h3 class="card-title">👤 Profile Settings</h3>
         </div>
@@ -22,12 +49,39 @@
             <div class="form-group">
                 <label class="form-label">Email</label>
                 <input type="email" name="email" class="form-control" value="{{ current_user.email }}">
+                <span style="font-size:11px;color:var(--text-muted);">Changing this will require re-verifying your new email.</span>
             </div>
+            {% if current_user.has_password %}
             <div class="form-group">
                 <label class="form-label">New Password (leave blank to keep current)</label>
                 <input type="password" name="new_password" class="form-control" placeholder="Enter new password">
             </div>
+            {% else %}
+            <p style="font-size:12px;color:var(--text-muted);">
+                This account signed in via {{ 'Google' if current_user.google_linked else 'GitHub' }} and has no password set.
+            </p>
+            {% endif %}
             <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+        </form>
+    </div>
+
+    <div class="card animate-fade" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">🔔 Notification Preferences</h3></div>
+        <form method="POST" action="{{ url_for('auth.update_notification_preferences') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label class="form-check">
+                    <input type="checkbox" name="email_notifications_enabled" {% if current_user.email_notifications_enabled %}checked{% endif %}>
+                    <span style="font-size:13px;color:var(--text-secondary)">Email me about cold-snap alerts I've subscribed to</span>
+                </label>
+            </div>
+            <div class="form-group">
+                <label class="form-check">
+                    <input type="checkbox" name="security_alert_emails_enabled" {% if current_user.security_alert_emails_enabled %}checked{% endif %}>
+                    <span style="font-size:13px;color:var(--text-secondary)">Email me when my account is signed into from a new device</span>
+                </label>
+            </div>
+            <button type="submit" class="btn btn-outline btn-sm">Save Preferences</button>
         </form>
     </div>
 
@@ -39,6 +93,31 @@
             <div class="spec-item"><span class="spec-label">Joined</span><span class="spec-value">{{ current_user.created_at.strftime('%b %d, %Y') if current_user.created_at else 'N/A' }}</span></div>
             <div class="spec-item"><span class="spec-label">Last Login</span><span class="spec-value">{{ current_user.last_login.strftime('%b %d, %Y %H:%M') if current_user.last_login else 'N/A' }}</span></div>
         </div>
+        <a href="{{ url_for('auth.sessions_page') }}" class="btn btn-outline btn-sm" style="margin-top:12px;">🔐 Manage Sessions & Devices</a>
+    </div>
+
+    <div class="card animate-fade" style="margin-top:20px;border-color:var(--danger,#ef4444);">
+        <div class="card-header"><h3 class="card-title" style="color:var(--danger,#ef4444);">⚠️ Danger Zone</h3></div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">
+            Permanently delete your account and personal data (predictions, trips, battery health records, alerts).
+            Community reports you've submitted are kept but anonymized. This cannot be undone.
+        </p>
+        <button type="button" class="btn btn-sm" style="background:var(--danger,#ef4444);color:white;" onclick="document.getElementById('deleteAccountForm').style.display='block'; this.style.display='none';">Delete My Account</button>
+        <form id="deleteAccountForm" method="POST" action="{{ url_for('auth.delete_account') }}" style="display:none;margin-top:10px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if current_user.has_password %}
+            <div class="form-group">
+                <label class="form-label">Confirm your password</label>
+                <input type="password" name="password" class="form-control" required>
+            </div>
+            {% else %}
+            <div class="form-group">
+                <label class="form-label">Type your username ("{{ current_user.username }}") to confirm</label>
+                <input type="text" name="confirm_username" class="form-control" required>
+            </div>
+            {% endif %}
+            <button type="submit" class="btn btn-sm" style="background:var(--danger,#ef4444);color:white;" onclick="return confirm('This permanently deletes your account. Are you absolutely sure?')">Permanently Delete Account</button>
+        </form>
     </div>
 </div>
 {% endblock %}

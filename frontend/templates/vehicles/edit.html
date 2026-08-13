@@ -4,7 +4,7 @@
 {% block content %}
 <div style="max-width:700px;" class="animate-fade">
     <div class="card">
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-row">
                 <div class="form-group">
@@ -69,6 +69,29 @@
             <div class="form-group">
                 <label class="form-label">Energy Consumption (Wh/km)</label>
                 <input type="number" name="energy_consumption_wh_km" class="form-control" value="{{ vehicle.energy_consumption_wh_km or '' }}" step="0.1">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Price (USD, approximate)</label>
+                    <input type="number" name="price_usd" class="form-control" value="{{ vehicle.price_usd or '' }}" step="1">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Vehicle Type</label>
+                    <select name="vehicle_type" class="form-control">
+                        <option value="">-- Select --</option>
+                        {% for t in ['sedan', 'suv', 'crossover', 'hatchback', 'truck'] %}
+                        <option value="{{ t }}" {% if vehicle.vehicle_type == t %}selected{% endif %}>{{ t|title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Vehicle Image</label>
+                {% if vehicle.image_path %}
+                <div style="margin-bottom:8px;"><img src="{{ url_for('static', filename=vehicle.image_path) }}" alt="" style="width:120px;height:80px;object-fit:cover;border-radius:6px;"></div>
+                {% endif %}
+                <input type="file" name="image" accept="image/jpeg,image/png,image/webp">
+                <span style="font-size:11px;color:var(--text-muted);">Leave empty to keep the current image.</span>
             </div>
             <div style="display:flex;gap:10px;margin-top:20px;">
                 <button type="submit" class="btn btn-primary">💾 Update Vehicle</button>

@@ -14,11 +14,13 @@
 - Two roles: `admin` and standard user. Admin-only routes (retrain
   models, view analytics, manage datasets) are gated with an
   `@admin_required` decorator in `backend/app/api/admin.py`.
-- Default seeded credentials (`admin` / `admin123`, `demo` / `demo123`
-  from `seed_data.py`) are for **local development only**. These MUST be
-  changed (or the seed accounts removed/disabled) before any public or
-  production deployment — this is a known v1 limitation carried into
-  Phase 1 and not yet fixed; see §5.
+- **(Fixed, SEC-3 — see `PROJECT_WORKFLOW.md`)** `seed_data.py` no
+  longer creates accounts with hardcoded passwords. It uses
+  `ADMIN_PASSWORD`/`DEMO_PASSWORD` from `.env` if set, otherwise
+  generates a real random password per account via Python's `secrets`
+  module and prints it once to the console. The demo account can be
+  skipped entirely with `SEED_DEMO_USER=false`, recommended for
+  anything beyond local dev.
 
 ## 3. Secrets Management
 
@@ -57,8 +59,8 @@ project's approach to accuracy claims in general:
 1. **Permissive CORS** — `CORS(app)` with no explicit origin allowlist.
    Fine for local dev; must be scoped to specific origins before any
    public deployment.
-2. **Default seeded admin/demo credentials** — must be rotated/disabled
-   before production use.
+2. ~~**Default seeded admin/demo credentials**~~ — **Fixed (SEC-3)**, see
+   §2 above.
 3. **No rate limiting** — API endpoints (including auth) have no
    throttling. A future ticket (see `FEATURE_TICKET_LIST.md`, SEC-1)
    covers adding `Flask-Limiter`.

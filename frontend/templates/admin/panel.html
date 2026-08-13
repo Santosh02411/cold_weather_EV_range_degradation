@@ -80,6 +80,56 @@
             </table>
         </div>
     </div>
+    <!-- Fleet Dashboard (FEAT-5) -->
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header">
+            <h3 class="card-title">🚙 Fleet Dashboard</h3>
+            <button onclick="loadFleetStats()" class="btn btn-outline btn-sm">Refresh</button>
+        </div>
+        <div id="fleetTotals" class="stats-grid" style="margin-bottom:14px;">
+            <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+                <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">Predictions by Vehicle</h4>
+                <div id="fleetByVehicle"></div>
+            </div>
+            <div>
+                <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">Most Active Users</h4>
+                <div id="fleetTopUsers"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Real Data (FEAT-6/FEAT-4) -->
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header">
+            <h3 class="card-title">📥 Real User-Reported Data</h3>
+            <button onclick="loadRealDataStats()" class="btn btn-outline btn-sm">Refresh</button>
+        </div>
+        <div id="realDataStats" class="stats-grid" style="margin-bottom:14px;">
+            <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+        </div>
+        <button class="btn btn-primary" onclick="retrainWithRealData()">Retrain using real data</button>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:8px;">
+            Blends real reported outcomes (weighted) into the synthetic training data and creates
+            a new model version — it does not overwrite the current one; activate it below once trained.
+        </p>
+    </div>
+
+    <!-- Model Versions (ML-4) -->
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header">
+            <h3 class="card-title">🧬 Model Versions</h3>
+            <button onclick="loadModelVersions()" class="btn btn-outline btn-sm">Refresh</button>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+            Activating a version is instant — no retraining, takes effect on the very next prediction.
+        </p>
+        <div id="modelVersionsTable" class="table-container">
+            <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+        </div>
+    </div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -89,7 +139,113 @@ async function retrainModels() {
     try {
         const result = await apiFetch('/admin/retrain', { method: 'POST' });
         showAlert('success', 'ML models retrained successfully!');
+        loadModelVersions();
     } catch(e) { showAlert('danger', e.message); }
 }
+
+async function loadRealDataStats() {
+    const container = document.getElementById('realDataStats');
+    if (!container) return;
+    try {
+        const s = await apiFetch('/admin/api/real-data-stats');
+        container.innerHTML = `
+            <div class="stat-card"><div class="stat-icon blue">📥</div>
+                <div><div class="stat-value">${s.total_real_samples}</div><div class="stat-label">Total real samples</div></div></div>
+            <div class="stat-card"><div class="stat-icon green">🌍</div>
+                <div><div class="stat-value">${s.from_community_reports}</div><div class="stat-label">Community reports</div></div></div>
+            <div class="stat-card"><div class="stat-icon amber">🔁</div>
+                <div><div class="stat-value">${s.from_prediction_followups}</div><div class="stat-label">Prediction follow-ups</div></div></div>
+            <div class="stat-card"><div class="stat-icon cyan">🎯</div>
+                <div><div class="stat-value">${s.model_accuracy_vs_real_outcomes ? s.model_accuracy_vs_real_outcomes.mae_vs_real_user_outcomes_pct + 'pp' : '—'}</div><div class="stat-label">Model MAE vs real outcomes</div></div></div>`;
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't load stats: ${e.message}</p>`;
+    }
+}
+
+async function retrainWithRealData() {
+    if (!confirm('Retrain using real reported data blended with synthetic data? Requires at least 10 real samples.')) return;
+    try {
+        const meta = await apiFetch('/admin/api/retrain-with-real-data', { method: 'POST' });
+        showAlert('success', `Trained version v${meta.version} using ${meta.real_data_used.raw_real_samples} real samples (weighted x${meta.real_data_used.real_weight}).`);
+        loadModelVersions();
+    } catch (e) {
+        showAlert('danger', e.message);
+    }
+}
+
+async function loadModelVersions() {
+    const container = document.getElementById('modelVersionsTable');
+    if (!container) return;
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Loading…</p>';
+    try {
+        const result = await apiFetch('/admin/api/model-versions');
+        const versions = result.versions || [];
+        if (versions.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No trained versions yet — retrain to create the first one.</p>';
+            return;
+        }
+        const rows = versions.map(v => `
+            <tr>
+                <td><strong>v${v.version}</strong> ${v.is_active ? '<span class="badge badge-green">active</span>' : ''}</td>
+                <td>${v.trained_at_utc ? new Date(v.trained_at_utc).toLocaleString() : '--'}</td>
+                <td>${v.best_model || '--'} (MAE ${v.best_model_test_mae ?? '--'})</td>
+                <td>${v.real_world_calibration_mae_pp ?? '--'} pp</td>
+                <td>${v.models_included.join(', ')}</td>
+                <td>${v.is_active ? '<span style="color:var(--text-muted);font-size:12px;">current</span>' : `<button class="btn btn-sm btn-outline" onclick="activateVersion(${v.version})">Activate</button>`}</td>
+            </tr>`).join('');
+        container.innerHTML = `
+            <table>
+                <thead><tr><th>Version</th><th>Trained</th><th>Best model</th><th>Real-world calibration</th><th>Models</th><th></th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't load versions: ${e.message}</p>`;
+    }
+}
+
+async function activateVersion(versionNum) {
+    if (!confirm(`Activate model version v${versionNum}? This takes effect immediately for all new predictions.`)) return;
+    try {
+        await apiFetch(`/admin/api/model-versions/${versionNum}/activate`, { method: 'POST' });
+        showAlert('success', `Activated model version v${versionNum}.`);
+        loadModelVersions();
+    } catch (e) {
+        showAlert('danger', e.message);
+    }
+}
+
+async function loadFleetStats() {
+    const totals = document.getElementById('fleetTotals');
+    const byVehicle = document.getElementById('fleetByVehicle');
+    const topUsers = document.getElementById('fleetTopUsers');
+    try {
+        const s = await apiFetch('/admin/api/fleet-stats');
+        if (totals) {
+            totals.innerHTML = `
+                <div class="stat-card"><div class="stat-icon blue">👥</div><div><div class="stat-value">${s.totals.users}</div><div class="stat-label">Users</div></div></div>
+                <div class="stat-card"><div class="stat-icon green">🚗</div><div><div class="stat-value">${s.totals.active_vehicles}</div><div class="stat-label">Vehicles</div></div></div>
+                <div class="stat-card"><div class="stat-icon amber">📊</div><div><div class="stat-value">${s.totals.predictions}</div><div class="stat-label">Predictions</div></div></div>
+                <div class="stat-card"><div class="stat-icon cyan">🗺️</div><div><div class="stat-value">${s.totals.trips}</div><div class="stat-label">Trips</div></div></div>
+                <div class="stat-card"><div class="stat-icon purple">🌍</div><div><div class="stat-value">${s.totals.community_reports}</div><div class="stat-label">Community Reports</div></div></div>
+                <div class="stat-card"><div class="stat-icon red">🎯</div><div><div class="stat-value">${s.avg_confidence ?? '—'}</div><div class="stat-label">Avg Confidence</div></div></div>`;
+        }
+        if (byVehicle) {
+            const rows = s.by_vehicle.map(v => `<tr><td>${v.manufacturer} ${v.model_name}</td><td>${v.prediction_count}</td><td>${v.avg_degradation_pct ?? '—'}%</td></tr>`).join('');
+            byVehicle.innerHTML = s.by_vehicle.length ? `<table><thead><tr><th>Vehicle</th><th>Count</th><th>Avg Degradation</th></tr></thead><tbody>${rows}</tbody></table>` : '<p style="color:var(--text-muted);font-size:13px;">No predictions yet.</p>';
+        }
+        if (topUsers) {
+            const rows = s.top_users.map(u => `<tr><td>${u.username}</td><td>${u.prediction_count}</td></tr>`).join('');
+            topUsers.innerHTML = s.top_users.length ? `<table><thead><tr><th>User</th><th>Predictions</th></tr></thead><tbody>${rows}</tbody></table>` : '<p style="color:var(--text-muted);font-size:13px;">No data yet.</p>';
+        }
+    } catch (e) {
+        if (totals) totals.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't load fleet stats: ${e.message}</p>`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadModelVersions();
+    loadFleetStats();
+    loadRealDataStats();
+});
 </script>
 {% endblock %}

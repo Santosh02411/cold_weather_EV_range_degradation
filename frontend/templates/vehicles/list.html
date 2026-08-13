@@ -3,6 +3,9 @@
 {% block page_title %}🚗 EV Vehicle Database{% endblock %}
 {% block content %}
 <div class="animate-fade">
+    <!-- Recently Viewed -->
+    <div id="recentlyViewedSection" style="margin-bottom:16px;"></div>
+
     <!-- Search & Filter Bar -->
     <div class="card" style="margin-bottom:20px;">
         <form method="GET" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
@@ -28,6 +31,35 @@
                     {% endfor %}
                 </select>
             </div>
+            <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;">
+                <label class="form-label">Vehicle Type</label>
+                <select name="vehicle_type" class="form-control">
+                    <option value="">All Types</option>
+                    {% for t in vehicle_types %}
+                    <option value="{{ t }}" {% if selected_vehicle_type == t %}selected{% endif %}>{{ t|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="min-width:110px;margin-bottom:0;">
+                <label class="form-label">Min Price</label>
+                <input type="number" name="min_price" class="form-control" value="{{ request.args.get('min_price', '') }}">
+            </div>
+            <div class="form-group" style="min-width:110px;margin-bottom:0;">
+                <label class="form-label">Max Price</label>
+                <input type="number" name="max_price" class="form-control" value="{{ request.args.get('max_price', '') }}">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-check" style="white-space:nowrap;">
+                    <input type="checkbox" name="fast_charging" {% if request.args.get('fast_charging') == 'on' %}checked{% endif %}>
+                    <span style="font-size:13px;">⚡ Fast charging only</span>
+                </label>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-check" style="white-space:nowrap;">
+                    <input type="checkbox" name="favorites_only" {% if request.args.get('favorites_only') == 'on' %}checked{% endif %}>
+                    <span style="font-size:13px;">❤️ My favorites only</span>
+                </label>
+            </div>
             <button type="submit" class="btn btn-primary" style="margin-bottom:0;">🔍 Filter</button>
             <a href="{{ url_for('vehicles.add_vehicle') }}" class="btn btn-success" style="margin-bottom:0;">➕ Add Vehicle</a>
         </form>
@@ -37,18 +69,35 @@
     <div class="vehicle-grid">
         {% for v in vehicles.items %}
         <div class="vehicle-card">
-            <div class="vehicle-brand">{{ v.manufacturer }}</div>
-            <div class="vehicle-name">{{ v.model_name }}</div>
+            <div style="display:flex;justify-content:space-between;align-items:start;">
+                <div>
+                    <div class="vehicle-brand">{{ v.manufacturer }}</div>
+                    <div class="vehicle-name">{{ v.model_name }}</div>
+                </div>
+                <button class="btn btn-sm btn-outline favorite-btn" data-vehicle-id="{{ v.id }}"
+                        onclick="toggleFavorite({{ v.id }}, this)"
+                        style="{% if v.id in favorite_ids %}color:#ef4444;border-color:#ef4444;{% endif %}">
+                    {% if v.id in favorite_ids %}❤️{% else %}🤍{% endif %}
+                </button>
+            </div>
+            {% if v.image_path %}
+            <img src="{{ url_for('static', filename=v.image_path) }}" alt="{{ v.model_name }}" style="width:100%;height:140px;object-fit:cover;border-radius:8px;margin:10px 0;">
+            {% endif %}
+            {% if v.price_usd %}
+            <div style="font-size:15px;font-weight:700;color:var(--accent-blue);margin:6px 0;">${{ '{:,.0f}'.format(v.price_usd) }}</div>
+            {% endif %}
             <div class="vehicle-specs">
                 <div class="spec-item"><span class="spec-label">Battery</span><span class="spec-value">{{ v.battery_capacity_kwh }} kWh</span></div>
                 <div class="spec-item"><span class="spec-label">EPA Range</span><span class="spec-value">{{ v.epa_range_km }} km</span></div>
                 <div class="spec-item"><span class="spec-label">Chemistry</span><span class="spec-value"><span class="badge badge-blue">{{ v.battery_chemistry }}</span></span></div>
                 <div class="spec-item"><span class="spec-label">Weight</span><span class="spec-value">{{ v.vehicle_weight_kg }} kg</span></div>
-                <div class="spec-item"><span class="spec-label">Charging</span><span class="spec-value">{{ v.max_charging_power_kw or '--' }} kW</span></div>
+                <div class="spec-item"><span class="spec-label">Charging</span><span class="spec-value">{{ v.max_charging_power_kw or '--' }} kW {% if v.supports_fast_charging %}⚡{% endif %}</span></div>
                 <div class="spec-item"><span class="spec-label">Efficiency</span><span class="spec-value"><span class="badge badge-green">{{ v.efficiency_rating }}</span></span></div>
             </div>
-            <div style="margin-top:14px;display:flex;gap:8px;">
+            <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+                <a href="{{ url_for('vehicles.view_vehicle', vehicle_id=v.id) }}" class="btn btn-outline btn-sm">👁️ Details</a>
                 <a href="{{ url_for('vehicles.edit_vehicle', vehicle_id=v.id) }}" class="btn btn-outline btn-sm">✏️ Edit</a>
+                <a href="{{ url_for('vehicles.battery_health_page', vehicle_id=v.id) }}" class="btn btn-outline btn-sm">🔋 Battery Health</a>
                 <form method="POST" action="{{ url_for('vehicles.delete_vehicle', vehicle_id=v.id) }}" style="display:inline;" onsubmit="return confirm('Remove this vehicle?')">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-outline btn-sm" style="color:var(--accent-red);border-color:var(--accent-red);">🗑️ Remove</button>
@@ -76,4 +125,38 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function toggleFavorite(vehicleId, btn) {
+    const isFavorited = btn.textContent.trim() === '❤️';
+    try {
+        if (isFavorited) {
+            await apiFetch(`/vehicles/api/${vehicleId}/favorite`, { method: 'DELETE' });
+            btn.textContent = '🤍';
+            btn.style.color = ''; btn.style.borderColor = '';
+        } else {
+            await apiFetch(`/vehicles/api/${vehicleId}/favorite`, { method: 'POST' });
+            btn.textContent = '❤️';
+            btn.style.color = '#ef4444'; btn.style.borderColor = '#ef4444';
+        }
+    } catch (e) {
+        showAlert('danger', e.message);
+    }
+}
+
+async function loadRecentlyViewed() {
+    const container = document.getElementById('recentlyViewedSection');
+    if (!container) return;
+    try {
+        const result = await apiFetch('/vehicles/api/recently-viewed');
+        const vehicles = result.vehicles || [];
+        if (vehicles.length === 0) return;
+        const chips = vehicles.map(v => `<a href="/vehicles/view/${v.id}" class="badge badge-blue" style="text-decoration:none;">${v.manufacturer} ${v.model_name}</a>`).join(' ');
+        container.innerHTML = `<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Recently viewed:</div><div style="display:flex;gap:8px;flex-wrap:wrap;">${chips}</div>`;
+    } catch (e) { /* non-critical, fail silently */ }
+}
+
+document.addEventListener('DOMContentLoaded', loadRecentlyViewed);
+</script>
 {% endblock %}

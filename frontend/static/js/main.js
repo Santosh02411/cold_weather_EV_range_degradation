@@ -278,6 +278,57 @@ async function submitPrediction(event) {
     }
 }
 
+// Model comparison view: shows each model's individual raw prediction
+// next to the ensemble result, so "confidence" isn't just a mystery
+// number -- you can see WHY models agree or disagree.
+// Battery Heating Requirement: mirrors
+// services/battery_intelligence.py::heating_energy_estimate -- reuses
+// the SHAP/rule-based explanation's HVAC contribution_pct (already in
+// the response) rather than a separate backend call, and turns it into
+// an actual kWh figure for a representative 100km.
+function renderHeatingEstimate(explanation, energyWhKm) {
+    if (!explanation || !explanation.explanations) return '';
+    const hvacFactor = explanation.explanations.find(f =>
+        (f.factor || '').toLowerCase().includes('heater') || (f.factor || '').toLowerCase().includes('hvac'));
+    if (!hvacFactor || !hvacFactor.contribution_pct) return '';
+
+    const distanceKm = 100;
+    const totalEnergyKwh = (energyWhKm * distanceKm) / 1000;
+    const heatingKwh = totalEnergyKwh * (hvacFactor.contribution_pct / 100);
+
+    return `
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);font-size:12px;color:var(--text-secondary);">
+            🔥 <strong>Estimated heating energy:</strong> ~${heatingKwh.toFixed(1)} kWh of every ${totalEnergyKwh.toFixed(1)} kWh
+            used per 100km (${hvacFactor.contribution_pct}% of the predicted degradation effect is attributed to cabin heating).
+        </div>`;
+}
+
+function renderModelComparison(individualPredictions, ensembleValue) {
+    if (!individualPredictions || Object.keys(individualPredictions).length < 2) return '';
+    const names = Object.keys(individualPredictions);
+    const maxVal = Math.max(ensembleValue, ...Object.values(individualPredictions), 1);
+    const rows = names.map(name => {
+        const val = individualPredictions[name];
+        const displayName = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const pct = (val / maxVal) * 100;
+        return `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                <div style="width:110px;font-size:11px;color:var(--text-muted);flex-shrink:0;">${displayName}</div>
+                <div style="flex:1;height:6px;background:var(--bg-secondary);border-radius:4px;overflow:hidden;">
+                    <div style="width:${pct}%;height:100%;background:var(--border-glow, #638cff);"></div>
+                </div>
+                <div style="width:40px;font-size:11px;text-align:right;">${val}%</div>
+            </div>`;
+    }).join('');
+    return `
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+                What each model predicted individually (ensemble result shown above: ${ensembleValue}%):
+            </div>
+            ${rows}
+        </div>`;
+}
+
 function displayPredictionResult(result) {
     const container = document.getElementById('predictionResult');
     if (!container) return;
@@ -285,6 +336,22 @@ function displayPredictionResult(result) {
     const p = result.prediction;
     const v = result.vehicle;
     const anomaly = result.anomaly;
+    const details = result.model_details || {};
+
+    // UX-1: confidence is a real, varying number since Phase 1 (ensemble
+    // agreement) -- this renders it as a bar instead of leaving it
+    // buried in the JSON, so it's actually visible.
+    const confidence = p.prediction_confidence ?? 0;
+    const confPct = Math.round(confidence * 100);
+    const confColor = confidence >= 0.75 ? 'var(--success, #22c55e)' : confidence >= 0.5 ? 'var(--warning, #f59e0b)' : 'var(--danger, #ef4444)';
+    const ensembleSize = (details.models_in_ensemble || []).length;
+
+    // UX-3: show the real-world-calibrated physics baseline (Phase 1,
+    // physics.py) next to the model's actual prediction, so the "why"
+    // behind the number is visible instead of just the final figure.
+    const baseline = details.physics_baseline_degradation_pct;
+    const baselineDiff = (baseline !== undefined && baseline !== null) ? (p.range_degradation_pct - baseline) : null;
+
     container.innerHTML = `
         <div class="animate-slide">
             ${anomaly && anomaly.is_anomaly ? `<div class="alert alert-warning" style="margin-bottom:12px">
@@ -292,6 +359,29 @@ function displayPredictionResult(result) {
                 than the ${anomaly.physics_baseline_pct}% typically seen at ${p.temperature_c}°C in published studies.
                 <button class="btn btn-sm" onclick="loadAnomalyNote(${p.id}, this)" style="margin-left:8px">Explain why</button>
             </div>` : ''}
+            <div class="card" style="margin-bottom:16px;padding:14px 16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-size:13px;color:var(--text-secondary);font-weight:600;">
+                        Model Confidence
+                        <span title="This isn't a formal probability — it's how much the different ML models (linear regression, random forest, gradient boosting) agree with each other for YOUR specific inputs. They tend to agree closely on typical conditions and disagree more on unusual combinations (e.g. extreme cold + very high speed + mountainous terrain), because each model extrapolates differently outside the range of data it's confident about. Low confidence means 'this is an unusual combination, treat it with a bit more caution' — not 'the model is broken.'" style="cursor:help;color:var(--text-muted);font-weight:400;">ⓘ</span>
+                    </span>
+                    <span style="font-size:13px;font-weight:700;">${confPct}%</span>
+                </div>
+                <div style="height:8px;background:var(--bg-secondary);border-radius:5px;overflow:hidden;">
+                    <div style="width:${confPct}%;height:100%;background:${confColor};border-radius:5px;"></div>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+                    ${ensembleSize > 0 ? `Based on agreement across ${ensembleSize} models — higher agreement means more confidence.` : (details.confidence_note || '')}
+                </div>
+                ${baseline !== null && baseline !== undefined ? `
+                <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);font-size:12px;color:var(--text-secondary);">
+                    <strong>Typical for ${p.temperature_c}°C</strong> (from published cold-weather studies): ${baseline}% degradation
+                    → <strong>your conditions:</strong> ${p.range_degradation_pct}%
+                    ${baselineDiff !== null ? `<span style="color:${baselineDiff > 5 ? 'var(--danger, #ef4444)' : baselineDiff < -5 ? 'var(--success, #22c55e)' : 'var(--text-muted)'}">(${baselineDiff > 0 ? '+' : ''}${baselineDiff.toFixed(1)} pts from other factors like HVAC, terrain, speed)</span>` : ''}
+                </div>` : ''}
+                ${renderModelComparison(details.individual_predictions, p.range_degradation_pct)}
+                ${renderHeatingEstimate(result.explanation, p.energy_consumption_wh_km)}
+            </div>
             <div class="stats-grid" style="margin-bottom:16px">
                 <div class="stat-card">
                     <div class="stat-icon red">📉</div>
@@ -312,15 +402,34 @@ function displayPredictionResult(result) {
             </div>
             ${result.explanation ? renderExplanation(result.explanation) : ''}
             <div class="card" style="margin-top:16px" id="aiBriefingCard">
-                <div class="card-header"><h3 class="card-title">💬 AI Trip Briefing</h3></div>
+                <div class="card-header">
+                    <h3 class="card-title">💬 AI Trip Briefing</h3>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn btn-sm btn-outline" onclick="shareBriefing(${p.id})">🔗 Share</button>
+                        <a class="btn btn-sm btn-outline" href="/predictions/api/${p.id}/briefing/pdf">⬇️ PDF</a>
+                    </div>
+                </div>
                 <div id="aiBriefingBody">
                     <button class="btn" onclick="loadBriefing(${p.id})">Generate briefing</button>
                 </div>
+                <div id="shareLinkResult_${p.id}" style="margin-top:10px;font-size:12px;"></div>
                 <div style="margin-top:14px;display:flex;gap:8px;">
                     <input type="text" id="aiQuestionInput" placeholder="Ask about this prediction…" style="flex:1" />
                     <button class="btn" onclick="askAboutPrediction(${p.id})">Ask</button>
                 </div>
                 <div id="aiAnswerBody" style="margin-top:10px;"></div>
+            </div>
+            <div class="card" style="margin-top:16px">
+                <div class="card-header"><h3 class="card-title">📥 Report What Actually Happened</h3></div>
+                <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+                    Drove in these conditions? Tell us the real range you got — it directly
+                    helps improve future predictions (see Community Reports).
+                </p>
+                <div style="display:flex;gap:8px;">
+                    <input type="number" id="actualRangeInput_${p.id}" placeholder="Actual range (km)" style="flex:1" step="0.1" min="0" />
+                    <button class="btn" onclick="submitActualRange(${p.id})">Submit</button>
+                </div>
+                <div id="actualRangeResult_${p.id}" style="margin-top:8px;font-size:13px;color:var(--text-secondary);"></div>
             </div>
         </div>
     `;
@@ -671,6 +780,346 @@ async function uploadDataset(event) {
         } else {
             showAlert('danger', result.error);
         }
+    } catch (e) {
+        showAlert('danger', e.message);
+    }
+}
+
+// ═══ Phase 4: Community Range Reports (FEAT-4) ═══
+async function submitCommunityReport(event) {
+    event.preventDefault();
+    const form = event.target;
+    const btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    const data = {
+        vehicle_id: parseInt(form.vehicle_id.value),
+        temperature_c: parseFloat(form.temperature_c.value),
+        starting_battery_pct: parseFloat(form.starting_battery_pct.value),
+        reported_range_km: parseFloat(form.reported_range_km.value),
+        terrain_type: form.terrain_type.value,
+        precipitation: form.precipitation.value,
+        hvac_usage: form.hvac_usage.checked,
+        notes: form.notes.value || null,
+    };
+    try {
+        await apiFetch('/community/api/reports', { method: 'POST', body: JSON.stringify(data) });
+        showAlert('success', 'Thanks — your report was added and will help improve predictions.');
+        form.reset();
+        loadCommunityStats();
+        loadCommunityReports();
+    } catch (e) {
+        showAlert('danger', e.message);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function loadCommunityStats() {
+    const container = document.getElementById('communityStats');
+    if (!container) return;
+    try {
+        const s = await apiFetch('/community/api/reports/stats');
+        container.innerHTML = `
+            <div class="stat-card"><div class="stat-icon blue">📥</div>
+                <div><div class="stat-value">${s.total_real_samples}</div><div class="stat-label">Total real samples</div></div></div>
+            <div class="stat-card"><div class="stat-icon green">🌍</div>
+                <div><div class="stat-value">${s.from_community_reports}</div><div class="stat-label">Community reports</div></div></div>
+            <div class="stat-card"><div class="stat-icon amber">🔁</div>
+                <div><div class="stat-value">${s.from_prediction_followups}</div><div class="stat-label">Prediction follow-ups</div></div></div>
+            <div class="stat-card"><div class="stat-icon cyan">🎯</div>
+                <div><div class="stat-value">${s.model_accuracy_vs_real_outcomes ? s.model_accuracy_vs_real_outcomes.mae_vs_real_user_outcomes_pct + 'pp' : '—'}</div><div class="stat-label">Model MAE vs real outcomes</div></div></div>`;
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't load stats: ${e.message}</p>`;
+    }
+}
+
+async function loadCommunityReports() {
+    const container = document.getElementById('communityReportsList');
+    if (!container) return;
+    try {
+        const result = await apiFetch('/community/api/reports?per_page=15');
+        const reports = result.reports || [];
+        if (reports.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No reports yet — be the first.</p>';
+            return;
+        }
+        const rows = reports.map(r => `
+            <tr>
+                <td>${r.vehicle ? r.vehicle.manufacturer + ' ' + r.vehicle.model_name : '—'}</td>
+                <td>${r.temperature_c}°C</td>
+                <td>${r.reported_range_km} km</td>
+                <td>${r.terrain_type}</td>
+                <td>${new Date(r.created_at).toLocaleDateString()}</td>
+            </tr>`).join('');
+        container.innerHTML = `
+            <table>
+                <thead><tr><th>Vehicle</th><th>Temp</th><th>Range</th><th>Terrain</th><th>Date</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't load reports: ${e.message}</p>`;
+    }
+}
+
+// ═══ Phase 4: report actual range after a prediction (FEAT-6) ═══
+async function submitActualRange(predictionId) {
+    const input = document.getElementById('actualRangeInput_' + predictionId);
+    const resultEl = document.getElementById('actualRangeResult_' + predictionId);
+    const value = input?.value;
+    if (!value) return;
+    try {
+        const result = await apiFetch(`/predictions/api/${predictionId}/report-actual`, {
+            method: 'POST', body: JSON.stringify({ actual_range_km: parseFloat(value) }),
+        });
+        if (resultEl) {
+            resultEl.innerHTML = `Thanks — predicted ${result.predicted_range_km} km, you got ${result.actual_range_km} km` +
+                (result.error_pct !== null ? ` (${result.error_pct}% off).` : '.') +
+                ` This will help improve future predictions.`;
+        }
+    } catch (e) {
+        if (resultEl) resultEl.innerHTML = `Couldn't save: ${e.message}`;
+    }
+}
+
+// ═══ Phase 4 (continued): FEAT-2 charging station finder ═══
+async function findChargingStations() {
+    const input = document.getElementById('stationSearchInput');
+    const container = document.getElementById('stationsResult');
+    const place = input?.value?.trim();
+    if (!place || !container) return;
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Searching…</p>';
+    try {
+        const result = await apiFetch(`/charging/api/stations?place=${encodeURIComponent(place)}`);
+        if (result.stations.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No stations found nearby.</p>';
+            return;
+        }
+        const rows = result.stations.map(s => `
+            <tr>
+                <td>${s.name}${s.operator ? ' <span style="color:var(--text-muted);font-size:11px;">(' + s.operator + ')</span>' : ''}</td>
+                <td>${s.address || '—'}</td>
+                <td>${s.distance_km !== null ? s.distance_km + ' km' : '—'}</td>
+                <td>${s.connector_types.join(', ') || '—'}</td>
+                <td>${s.max_power_kw ? s.max_power_kw + ' kW' : '—'}</td>
+            </tr>`).join('');
+        container.innerHTML = `
+            <table>
+                <thead><tr><th>Station</th><th>Address</th><th>Distance</th><th>Connectors</th><th>Max Power</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't find stations: ${e.message}</p>`;
+    }
+}
+
+// ═══ Phase 4 (continued): FEAT-1 battery health tracking ═══
+async function submitBatteryHealth(event, vehicleId) {
+    event.preventDefault();
+    const form = event.target;
+    const data = {
+        soh_pct: parseFloat(form.soh_pct.value),
+        odometer_km: form.odometer_km.value ? parseFloat(form.odometer_km.value) : null,
+        notes: form.notes.value || null,
+    };
+    try {
+        await apiFetch(`/vehicles/api/${vehicleId}/battery-health`, { method: 'POST', body: JSON.stringify(data) });
+        form.reset();
+        showAlert('success', 'Reading saved.');
+        loadBatteryHealth(vehicleId);
+    } catch (e) {
+        showAlert('danger', e.message);
+    }
+}
+
+async function loadBatteryHealth(vehicleId) {
+    const summary = document.getElementById('batteryTrendSummary');
+    const table = document.getElementById('batteryHistoryTable');
+    try {
+        const result = await apiFetch(`/vehicles/api/${vehicleId}/battery-health`);
+        if (summary) {
+            if (result.trend) {
+                const t = result.trend;
+                const sign = t.slope_pct_per_year >= 0 ? '+' : '';
+                summary.innerHTML = `
+                    <div class="stats-grid">
+                        <div class="stat-card"><div class="stat-icon ${t.slope_pct_per_year < 0 ? 'red' : 'green'}">📉</div>
+                            <div><div class="stat-value">${sign}${t.slope_pct_per_year}%/yr</div><div class="stat-label">Degradation rate</div></div></div>
+                        <div class="stat-card"><div class="stat-icon blue">🔋</div>
+                            <div><div class="stat-value">${t.latest_soh_pct}%</div><div class="stat-label">Latest SOH</div></div></div>
+                        <div class="stat-card"><div class="stat-icon amber">🔮</div>
+                            <div><div class="stat-value">${t.projections['3_year']}%</div><div class="stat-label">Projected in 3 yrs</div></div></div>
+                    </div>
+                    <p style="font-size:11px;color:var(--text-muted);margin-top:10px;">
+                        Linear projection from ${t.num_records} reading(s) — treat as a rough trend, not a guarantee.
+                    </p>`;
+            } else {
+                summary.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Log at least 2 readings to see a trend.</p>';
+            }
+        }
+        if (table) {
+            if (result.records.length === 0) {
+                table.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No readings yet.</p>';
+            } else {
+                const rows = result.records.slice().reverse().map(r => `
+                    <tr><td>${new Date(r.recorded_at).toLocaleDateString()}</td><td>${r.soh_pct}%</td><td>${r.odometer_km ?? '—'}</td></tr>
+                `).join('');
+                table.innerHTML = `<table><thead><tr><th>Date</th><th>SOH</th><th>Odometer</th></tr></thead><tbody>${rows}</tbody></table>`;
+            }
+        }
+    } catch (e) {
+        if (summary) summary.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't load: ${e.message}</p>`;
+    }
+}
+
+// ═══ Phase 4 (continued): FEAT-3 cold snap alerts ═══
+async function submitAlertSubscription(event) {
+    event.preventDefault();
+    const form = event.target;
+    const data = {
+        location: form.location.value,
+        temperature_threshold_c: parseFloat(form.temperature_threshold_c.value),
+    };
+    try {
+        await apiFetch('/alerts/api/subscriptions', { method: 'POST', body: JSON.stringify(data) });
+        form.reset();
+        form.temperature_threshold_c.value = -10;
+        showAlert('success', 'Alert created.');
+        loadAlertSubscriptions();
+    } catch (e) {
+        showAlert('danger', e.message);
+    }
+}
+
+async function loadAlertSubscriptions() {
+    const container = document.getElementById('alertSubscriptionsList');
+    if (!container) return;
+    try {
+        const result = await apiFetch('/alerts/api/subscriptions');
+        const subs = result.subscriptions || [];
+        if (subs.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No alerts yet.</p>';
+            return;
+        }
+        container.innerHTML = subs.map(s => `
+            <div class="card" style="margin-bottom:10px;padding:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <strong>${s.location}</strong> — alert at ≤ ${s.temperature_threshold_c}°C
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+                            ${s.enabled ? '🟢 Active' : '⚪ Paused'}
+                            ${s.last_checked_temperature_c !== null ? ' · Last checked: ' + s.last_checked_temperature_c + '°C' : ''}
+                            ${s.last_alert_sent_at ? ' · Last alerted: ' + new Date(s.last_alert_sent_at).toLocaleString() : ''}
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn btn-sm btn-outline" onclick="toggleAlertSubscription(${s.id})">${s.enabled ? 'Pause' : 'Resume'}</button>
+                        <button class="btn btn-sm btn-outline" onclick="deleteAlertSubscription(${s.id})">Delete</button>
+                    </div>
+                </div>
+            </div>`).join('');
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't load alerts: ${e.message}</p>`;
+    }
+}
+
+async function toggleAlertSubscription(id) {
+    try {
+        await apiFetch(`/alerts/api/subscriptions/${id}/toggle`, { method: 'POST' });
+        loadAlertSubscriptions();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+async function deleteAlertSubscription(id) {
+    if (!confirm('Delete this alert?')) return;
+    try {
+        await apiFetch(`/alerts/api/subscriptions/${id}`, { method: 'DELETE' });
+        loadAlertSubscriptions();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+async function checkAlertsNow() {
+    const el = document.getElementById('checkNowResult');
+    if (el) el.textContent = 'Checking…';
+    try {
+        const r = await apiFetch('/alerts/api/check-now', { method: 'POST' });
+        if (el) el.textContent = `Checked ${r.checked}, triggered ${r.triggered}, sent ${r.sent}, skipped (cooldown) ${r.skipped_cooldown}.`;
+        loadAlertSubscriptions();
+    } catch (e) {
+        if (el) el.textContent = `Failed: ${e.message}`;
+    }
+}
+
+// ═══ Forecast-based predictions: "plan for a future date" ═══
+async function loadForecastOptions() {
+    const cityInput = document.getElementById('forecastCityInput');
+    const listEl = document.getElementById('forecastOptionsList');
+    const city = cityInput?.value?.trim();
+    if (!city || !listEl) return;
+    listEl.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">Loading forecast…</span>';
+    try {
+        const result = await apiFetch(`/weather/api/forecast?city=${encodeURIComponent(city)}`);
+        const forecasts = (result.forecasts || []).slice(0, 12); // next ~36 hours at 3hr steps, or demo's 24 slots trimmed
+        if (forecasts.length === 0) {
+            listEl.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">No forecast available.</span>';
+            return;
+        }
+        const badge = result.data_source === 'live'
+            ? '<span style="color:#22c55e;">🟢 live forecast</span>'
+            : '<span style="color:#f59e0b;">🟡 demo forecast</span>';
+        const options = forecasts.map((f, i) =>
+            `<option value="${i}">${new Date(f.datetime).toLocaleString([], {weekday:'short', month:'short', day:'numeric', hour:'2-digit'})} — ${f.temperature_c}°C, ${f.weather}</option>`
+        ).join('');
+        listEl.innerHTML = `
+            <div style="font-size:11px;margin-bottom:4px;">${badge}</div>
+            <select id="forecastSlotSelect" class="form-control" style="margin-bottom:6px;">
+                <option value="">-- Pick a time --</option>
+                ${options}
+            </select>
+            <button type="button" class="btn btn-sm" onclick="applyForecastSelection(${JSON.stringify(forecasts).replace(/"/g, '&quot;')})">Use this forecast</button>
+        `;
+    } catch (e) {
+        listEl.innerHTML = `<span style="font-size:12px;color:var(--text-muted);">Couldn't load forecast: ${e.message}</span>`;
+    }
+}
+
+function applyForecastSelection(forecasts) {
+    const select = document.getElementById('forecastSlotSelect');
+    const idx = select?.value;
+    if (idx === '' || idx === undefined) return;
+    const f = forecasts[parseInt(idx)];
+    if (!f) return;
+    const tempInput = document.getElementById('tempInput');
+    const humidityInput = document.getElementById('humidityInput');
+    const windInput = document.getElementById('windInput');
+    const precipInput = document.getElementById('precipInput');
+    if (tempInput) tempInput.value = f.temperature_c;
+    if (humidityInput && f.humidity !== undefined) humidityInput.value = Math.round(f.humidity);
+    if (windInput && f.wind_speed_kmh !== undefined) windInput.value = Math.round(f.wind_speed_kmh);
+    if (precipInput && f.precipitation) precipInput.value = f.precipitation;
+    showAlert('success', `Loaded forecast for ${new Date(f.datetime).toLocaleString()} — you can still adjust any field before predicting.`);
+}
+
+// ═══ Share a briefing as a public read-only link ═══
+async function shareBriefing(predictionId) {
+    const el = document.getElementById('shareLinkResult_' + predictionId);
+    if (el) el.textContent = 'Generating link…';
+    try {
+        const result = await apiFetch(`/predictions/api/${predictionId}/share`, { method: 'POST' });
+        if (el) {
+            el.innerHTML = `<input type="text" readonly value="${result.share_url}" style="width:70%;font-size:11px;" onclick="this.select()"> ` +
+                `<button class="btn btn-sm btn-outline" onclick="navigator.clipboard.writeText('${result.share_url}')">Copy</button> ` +
+                `<button class="btn btn-sm btn-outline" onclick="revokeShareLink(${predictionId}, this)">Revoke</button>`;
+        }
+    } catch (e) {
+        if (el) el.textContent = `Couldn't create link: ${e.message}`;
+    }
+}
+
+async function revokeShareLink(predictionId, btn) {
+    try {
+        await apiFetch(`/predictions/api/${predictionId}/unshare`, { method: 'POST' });
+        const el = document.getElementById('shareLinkResult_' + predictionId);
+        if (el) el.textContent = 'Link revoked.';
     } catch (e) {
         showAlert('danger', e.message);
     }

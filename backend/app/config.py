@@ -126,6 +126,23 @@ class Config:
     LIVE_RETRAIN_DRIFT_PSI_THRESHOLD = float(os.environ.get('LIVE_RETRAIN_DRIFT_PSI_THRESHOLD', '0.25'))
     LIVE_RETRAIN_MIN_RECENT_PREDICTIONS = int(os.environ.get('LIVE_RETRAIN_MIN_RECENT_PREDICTIONS', '50'))
 
+    # Trip Planning phase: Google Maps as an optional geo provider
+    # (geocoding, routing with real traffic, elevation) alongside the
+    # free defaults above -- opt-in, since Google's APIs are paid
+    # beyond a free monthly credit (see services/geo.py's module
+    # docstring for the full rationale). Setting ROUTING_PROVIDER to
+    # 'google' (with a key) is the switch for routing; GEOCODE_PROVIDER
+    # / ELEVATION_PROVIDER separately opt geocoding/elevation into
+    # Google too, so a deployment can mix free + paid per capability.
+    GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
+    GEOCODE_PROVIDER = os.environ.get('GEOCODE_PROVIDER', 'nominatim')
+    ELEVATION_PROVIDER = os.environ.get('ELEVATION_PROVIDER', 'open_elevation')
+
+    # Trip Planning: safety margin kept in reserve when planning multi-
+    # stop/round trips and when computing a "safe" destination-
+    # recommendation radius (see services/route_planning.py).
+    TRIP_SAFETY_MARGIN_PCT = float(os.environ.get('TRIP_SAFETY_MARGIN_PCT', '15'))
+
 class DevelopmentConfig(Config):
     DEBUG = True
 

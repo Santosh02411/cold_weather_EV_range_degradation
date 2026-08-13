@@ -17,24 +17,32 @@
                         {% endfor %}
                     </select>
                 </div>
+                <div class="form-group" style="background:var(--bg-secondary);padding:10px;border-radius:8px;">
+                    <label class="form-label" style="margin-bottom:6px;">📅 Plan for a future date (optional)</label>
+                    <div style="display:flex;gap:8px;">
+                        <input type="text" id="forecastCityInput" placeholder="City, e.g. Chicago, IL" style="flex:1" />
+                        <button type="button" class="btn btn-sm btn-outline" onclick="loadForecastOptions()">Load Forecast</button>
+                    </div>
+                    <div id="forecastOptionsList" style="margin-top:8px;"></div>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Temperature (°C)</label>
-                        <input type="number" name="temperature_c" class="form-control" value="-10" step="0.1" required>
+                        <input type="number" name="temperature_c" id="tempInput" class="form-control" value="-10" step="0.1" required>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Humidity (%)</label>
-                        <input type="number" name="humidity" class="form-control" value="60" min="0" max="100">
+                        <input type="number" name="humidity" id="humidityInput" class="form-control" value="60" min="0" max="100">
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Wind Speed (km/h)</label>
-                        <input type="number" name="wind_speed_kmh" class="form-control" value="15" min="0">
+                        <input type="number" name="wind_speed_kmh" id="windInput" class="form-control" value="15" min="0">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Precipitation</label>
-                        <select name="precipitation" class="form-control">
+                        <select name="precipitation" id="precipInput" class="form-control">
                             <option value="none">None</option>
                             <option value="rain">Rain</option>
                             <option value="snow" selected>Snow</option>
