@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}Explainable AI — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🧠 Explainable AI{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div class="card">
+        <div class="card-header"><h3 class="card-title">Scenario</h3></div>
+        <form id="scenarioForm">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Vehicle</label>
+                    <select name="vehicle_id" class="form-control" required>
+                        <option value="">-- Choose Vehicle --</option>
+                        {% for v in vehicles %}
+                        <option value="{{ v.id }}">{{ v.manufacturer }} {{ v.model_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Model</label>
+                    <select name="model_name" class="form-control">
+                        {% for m in models %}
+                        <option value="{{ m }}" {% if m == 'random_forest' %}selected{% endif %}>{{ m.replace('_', ' ').title() }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Temperature (°C)</label>
+                    <input type="number" name="temperature_c" class="form-control" value="-15" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Speed (km/h)</label>
+                    <input type="number" name="vehicle_speed_kmh" class="form-control" value="90">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Terrain</label>
+                    <select name="terrain_type" class="form-control">
+                        <option value="flat">Flat</option>
+                        <option value="hilly" selected>Hilly</option>
+                        <option value="mountainous">Mountainous</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Battery (%)</label>
+                    <input type="number" name="battery_percentage" class="form-control" value="60" min="0" max="100">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Battery Age (yrs)</label>
+                    <input type="number" name="battery_age_years" class="form-control" value="3" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label class="form-check" style="margin-top:28px;">
+                        <input type="checkbox" name="hvac_usage" checked> <span style="font-size:13px;color:var(--text-secondary)">Heater On</span>
+                    </label>
+                </div>
+            </div>
+        </form>
+        <p style="font-size:11px;color:var(--text-muted);">Set your scenario above, then run any explanation tool below — each uses these same conditions.</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">🎯 Prediction Confidence</h3></div>
+            <button class="btn btn-primary btn-sm" onclick="runConfidence()">Analyze Confidence</button>
+            <div id="confidenceResult" style="margin-top:12px;"></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">🔁 Counterfactual Explanations</h3></div>
+            <button class="btn btn-primary btn-sm" onclick="runCounterfactual()">What Would Change This?</button>
+            <div id="counterfactualResult" style="margin-top:12px;"></div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">🟢 LIME Explanation</h3></div>
+        <p style="font-size:12px;color:var(--text-muted);">Local, model-agnostic explanation — works for every model type, including ones SHAP can't explain here.</p>
+        <button class="btn btn-primary btn-sm" onclick="runLime()">Explain with LIME</button>
+        <div id="limeResult" style="margin-top:12px;"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">💧 SHAP Waterfall</h3></div>
+            <button class="btn btn-primary btn-sm" onclick="runWaterfall()">Generate Waterfall</button>
+            <div id="waterfallResult" style="margin-top:12px;"></div>
+            <canvas id="waterfallChart" height="220" style="display:none;"></canvas>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">⚖️ SHAP Force Plot</h3></div>
+            <button class="btn btn-primary btn-sm" onclick="runForce()">Generate Force Plot</button>
+            <div id="forceResult" style="margin-top:12px;"></div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">📈 Partial Dependence / ICE Plot</h3></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            <select id="pdpFeatureSelect" class="form-control" style="max-width:280px;">
+                {% for f in pdp_features %}
+                <option value="{{ f.name }}" {% if f.name == 'temperature_c' %}selected{% endif %}>{{ f.display_name }}</option>
+                {% endfor %}
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="runPdp()">Generate Plot</button>
+        </div>
+        <canvas id="pdpChart" height="220"></canvas>
+        <div id="pdpNote" style="font-size:11px;color:var(--text-muted);margin-top:6px;"></div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">🌐 Global Explanation Dashboard</h3></div>
+        <p style="font-size:12px;color:var(--text-muted);">SHAP importance aggregated across many synthetic scenarios — not just this one.</p>
+        <button class="btn btn-primary btn-sm" onclick="runGlobal()">Compute Global Importance</button>
+        <canvas id="globalChart" height="220"></canvas>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function getScenario() {
+    const form = document.getElementById('scenarioForm');
+    if (!form.vehicle_id.value) { showAlert('danger', 'Select a vehicle first.'); return null; }
+    return {
+        vehicle_id: parseInt(form.vehicle_id.value),
+        model_name: form.model_name.value,
+        temperature_c: parseFloat(form.temperature_c.value),
+        vehicle_speed_kmh: parseFloat(form.vehicle_speed_kmh.value),
+        terrain_type: form.terrain_type.value,
+        battery_percentage: parseFloat(form.battery_percentage.value),
+        battery_age_years: parseFloat(form.battery_age_years.value),
+        hvac_usage: form.hvac_usage.checked,
+    };
+}
+
+async function post(url, body) {
+    return apiFetch(url, { method: 'POST', body: JSON.stringify(body) });
+}
+
+async function runConfidence() {
+    const scenario = getScenario(); if (!scenario) return;
+    const el = document.getElementById('confidenceResult');
+    el.innerHTML = 'Analyzing…';
+    try {
+        const r = await post('/explain/api/confidence', scenario);
+        if (!r.available) { el.innerHTML = r.reason; return; }
+        const rows = Object.entries(r.individual_predictions).map(([m, v]) => `<tr><td>${m}</td><td>${v}%</td></tr>`).join('');
+        el.innerHTML = `
+            <div style="font-size:24px;font-weight:700;">${(r.confidence * 100).toFixed(0)}%</div>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">${r.interpretation}</p>
+            <table><thead><tr><th>Model</th><th>Predicted Degradation</th></tr></thead><tbody>${rows}</tbody></table>`;
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+async function runCounterfactual() {
+    const scenario = getScenario(); if (!scenario) return;
+    const el = document.getElementById('counterfactualResult');
+    el.innerHTML = 'Thinking…';
+    try {
+        const r = await post('/explain/api/counterfactual', scenario);
+        if (!r.available) { el.innerHTML = r.reason; return; }
+        if (!r.scenarios.length) { el.innerHTML = '<p style="font-size:12px;color:var(--text-muted);">No applicable what-if scenarios for these conditions.</p>'; return; }
+        el.innerHTML = r.scenarios.map(s => `
+            <div style="padding:6px 0;border-bottom:1px solid var(--border-color);font-size:13px;">
+                <strong>${s.description}</strong>: ${s.baseline_degradation_pct}% → ${s.counterfactual_degradation_pct}%
+                <span class="badge ${s.improves_range ? 'badge-green' : 'badge-amber'}">${s.delta_pct > 0 ? '+' : ''}${s.delta_pct} pts</span>
+            </div>`).join('');
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+async function runLime() {
+    const scenario = getScenario(); if (!scenario) return;
+    const el = document.getElementById('limeResult');
+    el.innerHTML = 'Fitting local model…';
+    try {
+        const r = await post('/explain/api/lime', scenario);
+        if (!r.available) { el.innerHTML = r.reason; return; }
+        el.innerHTML = `
+            <p style="font-size:12px;color:var(--text-muted);">Predicted ${r.model_prediction}% (local approximation: ${r.local_prediction}%)</p>
+            <table><thead><tr><th>Condition</th><th>Weight</th></tr></thead><tbody>
+                ${r.explanations.map(e => `<tr><td>${e.condition}</td><td>${e.weight > 0 ? '+' : ''}${e.weight}</td></tr>`).join('')}
+            </tbody></table>`;
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+let waterfallChart;
+async function runWaterfall() {
+    const scenario = getScenario(); if (!scenario) return;
+    const el = document.getElementById('waterfallResult');
+    const canvas = document.getElementById('waterfallChart');
+    el.innerHTML = 'Computing SHAP values…';
+    canvas.style.display = 'none';
+    try {
+        const r = await post('/explain/api/shap-waterfall', scenario);
+        if (!r.available) { el.innerHTML = r.reason; return; }
+        el.innerHTML = `<p style="font-size:12px;color:var(--text-muted);">Base value ${r.base_value}% → prediction ${r.prediction}%</p>`;
+        canvas.style.display = 'block';
+        if (waterfallChart) waterfallChart.destroy();
+        waterfallChart = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: r.steps.map(s => s.display_name),
+                datasets: [{ label: 'Cumulative %', data: r.steps.map(s => s.cumulative),
+                    backgroundColor: r.steps.map(s => s.shap_value >= 0 ? 'rgba(248,113,113,0.6)' : 'rgba(52,211,153,0.6)') }],
+            },
+            options: { indexAxis: 'y', plugins: { legend: { display: false } } },
+        });
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+async function runForce() {
+    const scenario = getScenario(); if (!scenario) return;
+    const el = document.getElementById('forceResult');
+    el.innerHTML = 'Computing SHAP values…';
+    try {
+        const r = await post('/explain/api/shap-force', scenario);
+        if (!r.available) { el.innerHTML = r.reason; return; }
+        const pos = r.positive_forces.map(f => `<span class="badge badge-red" style="margin:2px;">${f.display_name} +${f.shap_value}</span>`).join('');
+        const neg = r.negative_forces.map(f => `<span class="badge badge-green" style="margin:2px;">${f.display_name} ${f.shap_value}</span>`).join('');
+        el.innerHTML = `
+            <p style="font-size:12px;color:var(--text-muted);">Base ${r.base_value}% → prediction ${r.prediction}%</p>
+            <div style="margin-top:6px;"><strong style="font-size:12px;">Pushing degradation up:</strong><br>${pos || '—'}</div>
+            <div style="margin-top:6px;"><strong style="font-size:12px;">Pushing degradation down:</strong><br>${neg || '—'}</div>`;
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+let pdpChart;
+async function runPdp() {
+    const scenario = getScenario(); if (!scenario) return;
+    scenario.feature = document.getElementById('pdpFeatureSelect').value;
+    const note = document.getElementById('pdpNote');
+    note.textContent = 'Computing…';
+    try {
+        const r = await post('/explain/api/pdp', scenario);
+        if (!r.available) { note.textContent = r.reason; return; }
+        note.textContent = `Feature: ${r.feature_display_name}`;
+        const labels = r.pdp.map(p => p.value);
+        const datasets = r.ice_curves.map(c => ({
+            label: c.label,
+            data: c.curve.map(pt => pt.degradation_pct),
+            borderColor: c.is_current_scenario ? '#638cff' : 'rgba(150,150,150,0.5)',
+            borderWidth: c.is_current_scenario ? 3 : 1,
+            pointRadius: 0,
+            tension: 0.3,
+        }));
+        const ctx = document.getElementById('pdpChart');
+        if (pdpChart) pdpChart.destroy();
+        pdpChart = new Chart(ctx, { type: 'line', data: { labels, datasets }, options: { scales: { y: { title: { display: true, text: 'Degradation %' } } } } });
+    } catch (e) { note.textContent = e.message; }
+}
+
+let globalChart;
+async function runGlobal() {
+    const scenario = getScenario(); if (!scenario) return;
+    try {
+        const r = await apiFetch(`/explain/api/global?model_name=${scenario.model_name}`);
+        if (!r.available) { showAlert('danger', r.reason); return; }
+        const ctx = document.getElementById('globalChart');
+        if (globalChart) globalChart.destroy();
+        globalChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: r.global_importance.map(f => f.display_name),
+                datasets: [{ label: 'Mean |SHAP|', data: r.global_importance.map(f => f.mean_abs_shap), backgroundColor: 'rgba(99,140,255,0.6)' }],
+            },
+            options: { indexAxis: 'y', plugins: { legend: { display: false } } },
+        });
+    } catch (e) { showAlert('danger', e.message); }
+}
+</script>
+{% endblock %}

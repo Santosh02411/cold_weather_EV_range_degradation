@@ -35,6 +35,12 @@ xgboost>=2.1.1
 # strictly required for the app to run.
 lightgbm>=4.5.0
 catboost>=1.2.5
+# Explainable AI (see ml/explainability.py) -- shap is already used by
+# ml/xai.py; lime is model-agnostic (works even for the neural network
+# / stacking ensemble models shap.TreeExplainer can't handle) and is
+# likewise optional -- missing it degrades LIME-specific endpoints
+# only, same "absent package -> reported, not a crash" convention.
+lime>=0.2.0.1
 pandas>=2.2.3
 numpy>=2.1.1
 shap>=0.46.0

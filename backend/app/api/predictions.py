@@ -10,6 +10,30 @@ from .. import db, limiter
 predictions_bp = Blueprint('predictions', __name__)
 
 
+def build_features_from_request(data, vehicle):
+    """Shared feature-dict construction from a request payload + a
+    vehicle record -- used by /api/predict and every /explain/api/*
+    endpoint (see api/explain.py) so they all encode a request
+    identically. Extracted here (rather than duplicated across six new
+    explainability endpoints) after the Explainable AI phase added
+    several more callers of this exact same shape.
+    """
+    return {
+        'temperature_c': float(data.get('temperature_c', 20)),
+        'humidity': float(data.get('humidity', 50)),
+        'wind_speed_kmh': float(data.get('wind_speed_kmh', 10)),
+        'precipitation': data.get('precipitation', 'none'),
+        'battery_percentage': float(data.get('battery_percentage', 100)),
+        'vehicle_speed_kmh': float(data.get('vehicle_speed_kmh', 60)),
+        'hvac_usage': bool(data.get('hvac_usage', True)),
+        'terrain_type': data.get('terrain_type', 'flat'),
+        'battery_age_years': float(data.get('battery_age_years', 0)),
+        'battery_capacity_kwh': vehicle.battery_capacity_kwh,
+        'epa_range_km': vehicle.epa_range_km,
+        'vehicle_weight_kg': vehicle.vehicle_weight_kg,
+    }
+
+
 @predictions_bp.route('/')
 @login_required
 def index():
@@ -35,20 +59,7 @@ def predict():
     if not vehicle:
         return jsonify({'error': 'Vehicle not found'}), 404
 
-    features = {
-        'temperature_c': float(data.get('temperature_c', 20)),
-        'humidity': float(data.get('humidity', 50)),
-        'wind_speed_kmh': float(data.get('wind_speed_kmh', 10)),
-        'precipitation': data.get('precipitation', 'none'),
-        'battery_percentage': float(data.get('battery_percentage', 100)),
-        'vehicle_speed_kmh': float(data.get('vehicle_speed_kmh', 60)),
-        'hvac_usage': bool(data.get('hvac_usage', True)),
-        'terrain_type': data.get('terrain_type', 'flat'),
-        'battery_age_years': float(data.get('battery_age_years', 0)),
-        'battery_capacity_kwh': vehicle.battery_capacity_kwh,
-        'epa_range_km': vehicle.epa_range_km,
-        'vehicle_weight_kg': vehicle.vehicle_weight_kg,
-    }
+    features = build_features_from_request(data, vehicle)
     model_name = data.get('ml_model', 'random_forest')
     result = get_prediction(features, model_name)
     explanation = get_shap_explanation(features, model_name)

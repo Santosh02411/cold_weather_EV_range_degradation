@@ -48,6 +48,9 @@
                     <a href="{{ url_for('charging.index') }}" class="nav-link {% if request.endpoint and 'charging' in request.endpoint %}active{% endif %}">
                         <span class="nav-icon">🔌</span> Charging Analysis
                     </a>
+                    <a href="{{ url_for('explain.index') }}" class="nav-link {% if request.endpoint and 'explain' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">🧠</span> Explainable AI
+                    </a>
                     <a href="{{ url_for('community.index') }}" class="nav-link {% if request.endpoint and 'community' in request.endpoint %}active{% endif %}">
                         <span class="nav-icon">🌍</span> Community Reports
                     </a>
