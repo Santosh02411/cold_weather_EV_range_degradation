@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Charging Cost Calculator — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}💵 Charging Cost Calculator{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Calculate</h3></div>
+            <form id="calcForm">
+                <div class="form-group">
+                    <label class="form-label">Energy needed (kWh)</label>
+                    <input type="number" name="energy_needed_kwh" class="form-control" value="40" min="0" step="0.1" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Charging type</label>
+                    <select name="fast_charging" class="form-control">
+                        <option value="true">DC Fast Charging</option>
+                        <option value="false">Home / Level 2</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Custom rate ($/kWh) — optional, overrides your <a href="{{ url_for('cost.preferences_page') }}">saved rate</a></label>
+                    <input type="number" name="custom_rate" class="form-control" step="0.01" min="0" placeholder="Leave blank to use your saved/default rate">
+                </div>
+                <button type="submit" class="btn btn-primary">💵 Calculate</button>
+            </form>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Result</h3></div>
+            <div id="calcResult"><p style="color:var(--text-muted);font-size:13px;">Enter the energy you need and calculate.</p></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('calcForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const body = { energy_needed_kwh: parseFloat(form.get('energy_needed_kwh')), fast_charging: form.get('fast_charging') === 'true' };
+    const customRate = form.get('custom_rate');
+    if (customRate) body.custom_rate = parseFloat(customRate);
+
+    const el = document.getElementById('calcResult');
+    try {
+        const r = await apiFetch('/cost/api/calculate', { method: 'POST', body: JSON.stringify(body) });
+        const sourceLabel = { custom_rate: 'your custom rate', station_listed: "the station's listed rate", default_estimate: 'a documented default estimate' }[r.source] || r.source;
+        el.innerHTML = `
+            <div class="stat-card" style="margin-bottom:12px;">
+                <div class="stat-icon green">💵</div>
+                <div><div class="stat-value">$${r.estimated_cost_usd}</div><div class="stat-label">Estimated Cost</div></div>
+            </div>
+            <p style="font-size:13px;">${r.energy_needed_kwh} kWh at $${r.price_per_kwh_usd}/kWh</p>
+            <p style="font-size:12px;color:var(--text-muted);">Rate source: ${sourceLabel}</p>`;
+    } catch (err) { el.innerHTML = `<p style="color:var(--accent-red);font-size:13px;">${err.message}</p>`; }
+});
+</script>
+{% endblock %}

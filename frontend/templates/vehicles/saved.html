@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Saved Vehicles — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}📌 Saved Vehicles{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        Vehicles you've recently looked at, kept here for quick reference. Want to keep one permanently?
+        <a href="{{ url_for('vehicles.favorites_page') }}">Favorite it</a> instead.
+    </p>
+    <div id="savedGrid" class="vehicle-grid">
+        <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function vehicleCard(v) {
+    return `
+        <div class="vehicle-card">
+            <div>
+                <div class="vehicle-brand">${v.manufacturer}</div>
+                <div class="vehicle-name">${v.model_name}</div>
+            </div>
+            <div class="vehicle-specs">
+                <div class="spec-item"><span class="spec-label">Battery</span><span class="spec-value">${v.battery_capacity_kwh} kWh</span></div>
+                <div class="spec-item"><span class="spec-label">EPA Range</span><span class="spec-value">${v.epa_range_km} km</span></div>
+                <div class="spec-item"><span class="spec-label">Chemistry</span><span class="spec-value"><span class="badge badge-blue">${v.battery_chemistry}</span></span></div>
+            </div>
+            <div style="margin-top:14px;">
+                <a href="/vehicles/view/${v.id}" class="btn btn-outline btn-sm">👁️ Details</a>
+            </div>
+        </div>`;
+}
+
+async function loadSaved() {
+    const el = document.getElementById('savedGrid');
+    try {
+        const result = await apiFetch('/vehicles/api/recently-viewed');
+        const vehicles = result.vehicles || [];
+        if (!vehicles.length) {
+            el.innerHTML = `<div class="card" style="grid-column:1/-1;text-align:center;padding:40px;">
+                <p style="font-size:18px;color:var(--text-muted);">No saved vehicles yet — view a vehicle's details to save it here automatically.</p>
+                <a href="{{ url_for('vehicles.list_vehicles') }}" class="btn btn-primary" style="margin-top:12px;">🚗 Browse Vehicles</a>
+            </div>`;
+            return;
+        }
+        el.innerHTML = vehicles.map(vehicleCard).join('');
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', loadSaved);
+</script>
+{% endblock %}

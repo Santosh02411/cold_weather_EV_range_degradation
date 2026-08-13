@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Vehicle Management — Admin{% endblock %}
+{% block page_title %}🚗 Vehicle Management{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        Every vehicle in the catalog, including deactivated ones — the public catalog only ever shows active
+        vehicles, so this is the only place to see (and undo) a deactivation.
+    </p>
+    <div class="card">
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr><th>Manufacturer</th><th>Model</th><th>Year</th><th>Battery</th><th>EPA Range</th><th>Status</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                    {% for v in vehicles %}
+                    <tr>
+                        <td><strong>{{ v.manufacturer }}</strong></td>
+                        <td>{{ v.model_name }}</td>
+                        <td>{{ v.year or '--' }}</td>
+                        <td>{{ v.battery_capacity_kwh }} kWh</td>
+                        <td>{{ v.epa_range_km }} km</td>
+                        <td><span class="badge {% if v.is_active %}badge-green{% else %}badge-red{% endif %}">{{ 'Active' if v.is_active else 'Inactive' }}</span></td>
+                        <td>
+                            <a href="{{ url_for('vehicles.edit_vehicle', vehicle_id=v.id) }}" class="btn btn-outline btn-sm">✏️ Edit</a>
+                            <form method="POST" action="{{ url_for('admin.toggle_vehicle_active', vehicle_id=v.id) }}" style="display:inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-outline btn-sm">{{ '🚫 Deactivate' if v.is_active else '✅ Activate' }}</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" style="text-align:center;color:var(--text-muted);">No vehicles yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px;">
+        <a href="{{ url_for('vehicles.add_vehicle') }}" class="btn btn-primary">➕ Add Vehicle</a>
+        <a href="{{ url_for('admin.panel') }}" class="btn btn-outline">← Back to Admin Panel</a>
+    </div>
+</div>
+{% endblock %}

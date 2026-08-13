@@ -8,6 +8,8 @@
     <title>{% block title %}EV Cold Weather Modeler{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -54,6 +56,9 @@
                     <a href="{{ url_for('explain.index') }}" class="nav-link {% if request.endpoint and 'explain' in request.endpoint %}active{% endif %}">
                         <span class="nav-icon">🧠</span> Explainable AI
                     </a>
+                    <a href="{{ url_for('visualize.index') }}" class="nav-link {% if request.endpoint and 'visualize' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">📈</span> Data Visualization
+                    </a>
                     <a href="{{ url_for('community.index') }}" class="nav-link {% if request.endpoint and 'community' in request.endpoint %}active{% endif %}">
                         <span class="nav-icon">🌍</span> Community Reports
                     </a>
@@ -66,6 +71,87 @@
                 </div>
 
                 <div class="nav-section">
+                    <div class="nav-section-title">👤 User Dashboard</div>
+                    <a href="{{ url_for('dashboard.personalized') }}" class="nav-link {% if request.endpoint == 'dashboard.personalized' %}active{% endif %}">
+                        <span class="nav-icon">👤</span> Personalized Dashboard
+                    </a>
+                    <a href="{{ url_for('predictions.history_page') }}" class="nav-link {% if request.endpoint == 'predictions.history_page' %}active{% endif %}">
+                        <span class="nav-icon">🕘</span> Prediction History
+                    </a>
+                    <a href="{{ url_for('predictions.saved_page') }}" class="nav-link {% if request.endpoint == 'predictions.saved_page' %}active{% endif %}">
+                        <span class="nav-icon">🔖</span> Saved Predictions
+                    </a>
+                    <a href="{{ url_for('vehicles.saved_page') }}" class="nav-link {% if request.endpoint == 'vehicles.saved_page' %}active{% endif %}">
+                        <span class="nav-icon">📌</span> Saved Vehicles
+                    </a>
+                    <a href="{{ url_for('vehicles.favorites_page') }}" class="nav-link {% if request.endpoint == 'vehicles.favorites_page' %}active{% endif %}">
+                        <span class="nav-icon">❤️</span> Favorite Vehicles
+                    </a>
+                    <a href="{{ url_for('reports.index') }}" class="nav-link {% if request.endpoint == 'reports.index' %}active{% endif %}">
+                        <span class="nav-icon">📄</span> Saved Reports
+                    </a>
+                    <a href="{{ url_for('dashboard.usage_stats_page') }}" class="nav-link {% if request.endpoint == 'dashboard.usage_stats_page' %}active{% endif %}">
+                        <span class="nav-icon">📈</span> Usage Statistics
+                    </a>
+                    <a href="{{ url_for('dashboard.activity_page') }}" class="nav-link {% if request.endpoint == 'dashboard.activity_page' %}active{% endif %}">
+                        <span class="nav-icon">🕒</span> Recent Activity
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">🔔 Notifications</div>
+                    <a href="{{ url_for('notifications.preferences_page') }}#low-battery" class="nav-link {% if request.endpoint == 'notifications.preferences_page' %}active{% endif %}">
+                        <span class="nav-icon">🔋</span> Low Battery Alerts
+                    </a>
+                    <a href="{{ url_for('alerts.index') }}" class="nav-link {% if request.endpoint and 'alerts' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">🌨️</span> Severe Weather Alerts
+                    </a>
+                    <a href="{{ url_for('notifications.preferences_page') }}#charging" class="nav-link">
+                        <span class="nav-icon">⚡</span> Charging Reminder
+                    </a>
+                    <a href="{{ url_for('notifications.preferences_page') }}#battery-health" class="nav-link">
+                        <span class="nav-icon">⚠️</span> Battery Health Warning
+                    </a>
+                    <a href="{{ url_for('notifications.preferences_page') }}#maintenance" class="nav-link">
+                        <span class="nav-icon">🔧</span> Maintenance Reminder
+                    </a>
+                    <a href="{{ url_for('notifications.preferences_page') }}#email" class="nav-link">
+                        <span class="nav-icon">📧</span> Email Notifications
+                    </a>
+                    <a href="{{ url_for('notifications.preferences_page') }}#push" class="nav-link">
+                        <span class="nav-icon">📱</span> Push Notifications
+                    </a>
+                    <a href="{{ url_for('notifications.index') }}" class="nav-link {% if request.endpoint == 'notifications.index' %}active{% endif %}">
+                        <span class="nav-icon">🔔</span> In-App Notifications
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">💰 Cost Analysis</div>
+                    <a href="{{ url_for('cost.index') }}" class="nav-link {% if request.endpoint == 'cost.index' %}active{% endif %}">
+                        <span class="nav-icon">💵</span> Charging Cost Calculator
+                    </a>
+                    <a href="{{ url_for('cost.preferences_page') }}" class="nav-link {% if request.endpoint == 'cost.preferences_page' %}active{% endif %}">
+                        <span class="nav-icon">⚡</span> Electricity Price Integration
+                    </a>
+                    <a href="{{ url_for('cost.monthly_page') }}" class="nav-link {% if request.endpoint == 'cost.monthly_page' %}active{% endif %}">
+                        <span class="nav-icon">📅</span> Monthly Charging Cost
+                    </a>
+                    <a href="{{ url_for('cost.compare_page') }}" class="nav-link {% if request.endpoint == 'cost.compare_page' %}active{% endif %}">
+                        <span class="nav-icon">⛽</span> EV vs Petrol Cost Comparison
+                    </a>
+                    <a href="{{ url_for('cost.ownership_page') }}" class="nav-link {% if request.endpoint == 'cost.ownership_page' %}active{% endif %}">
+                        <span class="nav-icon">🧾</span> Ownership Cost Analysis
+                    </a>
+                    <a href="{{ url_for('cost.savings_page') }}" class="nav-link {% if request.endpoint == 'cost.savings_page' %}active{% endif %}">
+                        <span class="nav-icon">💰</span> Savings Calculator
+                    </a>
+                    <a href="{{ url_for('cost.history_page') }}" class="nav-link {% if request.endpoint == 'cost.history_page' %}active{% endif %}">
+                        <span class="nav-icon">🧾</span> Charging Cost History
+                    </a>
+                </div>
+
+                <div class="nav-section">
                     <div class="nav-section-title">Data</div>
                     <a href="{{ url_for('datasets.index') }}" class="nav-link {% if request.endpoint and 'datasets' in request.endpoint %}active{% endif %}">
                         <span class="nav-icon">📁</span> Datasets
@@ -74,14 +160,47 @@
                         <span class="nav-icon">📄</span> Reports
                     </a>
                     {% if current_user.is_authenticated and current_user.is_admin %}
-                    <a href="{{ url_for('admin.panel') }}" class="nav-link {% if request.endpoint in ('admin.panel', 'admin.manage_users', 'admin.analytics') %}active{% endif %}">
+                    <a href="{{ url_for('admin.panel') }}" class="nav-link {% if request.endpoint == 'admin.panel' %}active{% endif %}">
                         <span class="nav-icon">⚙️</span> Admin Panel
-                    </a>
-                    <a href="{{ url_for('admin.ml_dashboard') }}" class="nav-link {% if request.endpoint == 'admin.ml_dashboard' %}active{% endif %}">
-                        <span class="nav-icon">🧠</span> ML Dashboard
                     </a>
                     {% endif %}
                 </div>
+
+                {% if current_user.is_authenticated and current_user.is_admin %}
+                <div class="nav-section">
+                    <div class="nav-section-title">👨‍💼 Admin Dashboard</div>
+                    <a href="{{ url_for('admin.manage_users') }}" class="nav-link {% if request.endpoint == 'admin.manage_users' %}active{% endif %}">
+                        <span class="nav-icon">👥</span> User Management
+                    </a>
+                    <a href="{{ url_for('admin.vehicle_management') }}" class="nav-link {% if request.endpoint == 'admin.vehicle_management' %}active{% endif %}">
+                        <span class="nav-icon">🚗</span> Vehicle Management
+                    </a>
+                    <a href="{{ url_for('datasets.index') }}" class="nav-link {% if request.endpoint and 'datasets' in request.endpoint %}active{% endif %}">
+                        <span class="nav-icon">📁</span> Dataset Management
+                    </a>
+                    <a href="{{ url_for('admin.ml_dashboard') }}" class="nav-link {% if request.endpoint == 'admin.ml_dashboard' %}active{% endif %}">
+                        <span class="nav-icon">🧠</span> ML Model Management
+                    </a>
+                    <a href="{{ url_for('admin.weather_monitoring_page') }}" class="nav-link {% if request.endpoint == 'admin.weather_monitoring_page' %}active{% endif %}">
+                        <span class="nav-icon">🌤️</span> Weather API Monitoring
+                    </a>
+                    <a href="{{ url_for('admin.feedback_management') }}" class="nav-link {% if request.endpoint == 'admin.feedback_management' %}active{% endif %}">
+                        <span class="nav-icon">🚩</span> Feedback Management
+                    </a>
+                    <a href="{{ url_for('admin.analytics') }}" class="nav-link {% if request.endpoint == 'admin.analytics' %}active{% endif %}">
+                        <span class="nav-icon">📈</span> Prediction Statistics
+                    </a>
+                    <a href="{{ url_for('admin.system_logs_page') }}" class="nav-link {% if request.endpoint == 'admin.system_logs_page' %}active{% endif %}">
+                        <span class="nav-icon">🗒️</span> System Logs
+                    </a>
+                    <a href="{{ url_for('admin.fleet_dashboard_page') }}" class="nav-link {% if request.endpoint == 'admin.fleet_dashboard_page' %}active{% endif %}">
+                        <span class="nav-icon">📊</span> Analytics Dashboard
+                    </a>
+                    <a href="{{ url_for('admin.report_management') }}" class="nav-link {% if request.endpoint == 'admin.report_management' %}active{% endif %}">
+                        <span class="nav-icon">📄</span> Report Management
+                    </a>
+                </div>
+                {% endif %}
             </nav>
 
             <div class="sidebar-footer">

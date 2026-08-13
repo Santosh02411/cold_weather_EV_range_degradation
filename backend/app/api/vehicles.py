@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from flask_login import login_required, current_user
 from datetime import datetime
 from ..models.ev_vehicle import EVVehicle
@@ -275,6 +275,30 @@ def recently_viewed():
     return jsonify({'vehicles': [r.vehicle.to_dict() for r in recent if r.vehicle]})
 
 
+@vehicles_bp.route('/favorites')
+@login_required
+def favorites_page():
+    """Favorite Vehicles page. list_vehicles() already supports
+    ?favorites_only=on as a filter on the main catalog, but this gives
+    the User Dashboard a direct, unfiltered-by-search link straight to
+    "just my favorites."
+    """
+    return render_template('vehicles/favorites.html')
+
+
+@vehicles_bp.route('/saved')
+@login_required
+def saved_page():
+    """Saved Vehicles page. Backed by RecentlyViewedVehicle -- the
+    only other real per-user vehicle-interaction table this app has
+    besides favorites (see models/vehicle_interactions.py). Labeled
+    "Saved" rather than "Recently Viewed" for consistency with the
+    User Dashboard's naming, but the data and its 20-item cap are the
+    same real, already-tracked view history record_view() maintains.
+    """
+    return render_template('vehicles/saved.html')
+
+
 @vehicles_bp.route('/delete/<int:vehicle_id>', methods=['POST'])
 @login_required
 def delete_vehicle(vehicle_id):
@@ -331,6 +355,13 @@ def log_battery_health(vehicle_id):
     )
     db.session.add(record)
     db.session.commit()
+
+    try:
+        from ..services.notifications import check_battery_health_after_record
+        check_battery_health_after_record(record)
+    except Exception as e:
+        current_app.logger.warning(f"[notifications] battery-health check failed: {e}")
+
     return jsonify({'record': record.to_dict()}), 201
 
 

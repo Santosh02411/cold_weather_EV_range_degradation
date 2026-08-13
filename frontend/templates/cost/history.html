@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Charging Cost History — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🧾 Charging Cost History{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        A real log of what you actually charged and paid — separate from
+        <a href="{{ url_for('cost.monthly_page') }}">Monthly Charging Cost</a>, which projects spend from
+        simulated trips. Leave cost blank to have it estimated from your
+        <a href="{{ url_for('cost.preferences_page') }}">saved rate</a>.
+    </p>
+
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 class="card-title">Log a Session</h3></div>
+        <form id="sessionForm">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Vehicle</label>
+                    <select name="vehicle_id" class="form-control">
+                        <option value="">(none)</option>
+                        {% for v in vehicles %}
+                        <option value="{{ v.id }}">{{ v.manufacturer }} {{ v.model_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Source</label>
+                    <select name="source" class="form-control">
+                        <option value="home">Home</option>
+                        <option value="level2">Public Level 2</option>
+                        <option value="dc_fast">DC Fast</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Station name (optional)</label>
+                    <input type="text" name="station_name" class="form-control" placeholder="e.g. Home garage, EVgo on Main St">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Energy added (kWh)</label>
+                    <input type="number" name="energy_added_kwh" class="form-control" step="0.1" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Cost paid ($) — optional</label>
+                    <input type="number" name="cost_usd" class="form-control" step="0.01" min="0" placeholder="Leave blank to estimate">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Notes</label>
+                <input type="text" name="notes" class="form-control" maxlength="300">
+            </div>
+            <button type="submit" class="btn btn-primary">➕ Log Session</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Your Sessions</h3>
+        </div>
+        <div id="sessionTotals" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
+        <div id="sessionsList" class="table-container"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const SOURCE_LABELS = { home: 'Home', level2: 'Public L2', dc_fast: 'DC Fast' };
+
+async function deleteSession(id) {
+    if (!confirm('Delete this logged session?')) return;
+    try { await apiFetch(`/cost/api/sessions/${id}`, { method: 'DELETE' }); loadSessions(); }
+    catch (e) { showAlert('danger', e.message); }
+}
+
+async function loadSessions() {
+    const listEl = document.getElementById('sessionsList');
+    const totalsEl = document.getElementById('sessionTotals');
+    try {
+        const r = await apiFetch('/cost/api/sessions');
+        totalsEl.textContent = `${r.session_count} session(s) logged — ${r.total_energy_kwh} kWh, $${r.total_cost_usd} total.`;
+        if (!r.sessions.length) {
+            listEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No sessions logged yet.</p>';
+            return;
+        }
+        listEl.innerHTML = `<table><thead><tr><th>Date</th><th>Vehicle</th><th>Source</th><th>Station</th><th>Energy</th><th>Cost</th><th></th></tr></thead><tbody>
+            ${r.sessions.map(s => `
+                <tr>
+                    <td>${new Date(s.session_date).toLocaleDateString()}</td>
+                    <td>${s.vehicle || '—'}</td>
+                    <td><span class="badge badge-blue">${SOURCE_LABELS[s.source] || s.source}</span></td>
+                    <td>${s.station_name || '—'}</td>
+                    <td>${s.energy_added_kwh} kWh</td>
+                    <td>$${s.cost_usd}${s.is_cost_estimated ? ' <span style="font-size:10px;color:var(--text-muted);">(est.)</span>' : ''}</td>
+                    <td><button class="btn btn-outline btn-sm" onclick="deleteSession(${s.id})">✕</button></td>
+                </tr>`).join('')}
+            </tbody></table>`;
+    } catch (e) { listEl.innerHTML = e.message; }
+}
+
+document.getElementById('sessionForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const body = { source: form.get('source'), energy_added_kwh: parseFloat(form.get('energy_added_kwh')) };
+    if (form.get('vehicle_id')) body.vehicle_id = parseInt(form.get('vehicle_id'));
+    if (form.get('station_name')) body.station_name = form.get('station_name');
+    if (form.get('cost_usd')) body.cost_usd = parseFloat(form.get('cost_usd'));
+    if (form.get('notes')) body.notes = form.get('notes');
+
+    try {
+        await apiFetch('/cost/api/sessions', { method: 'POST', body: JSON.stringify(body) });
+        e.target.reset();
+        loadSessions();
+    } catch (err) { showAlert('danger', err.message); }
+});
+
+document.addEventListener('DOMContentLoaded', loadSessions);
+</script>
+{% endblock %}

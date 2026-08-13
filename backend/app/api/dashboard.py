@@ -199,3 +199,40 @@ def analytics_cost():
 def analytics_user():
     """User Analytics: a personal activity profile."""
     return jsonify(analytics_service.user_analytics(current_user.id))
+
+
+# ─────────────────────── User Dashboard (personal hub) ───────────────────────
+# Personalized Dashboard / Usage Statistics / Recent Activity -- these
+# are thin pages over data that mostly already existed (user_analytics,
+# and the per-feature history/favorites/saved endpoints); the new work
+# is recent_activity() (a real merged feed, see analytics.py) and
+# wiring a "My Account" hub page that links everything together instead
+# of leaving it API-only or scattered across unrelated pages.
+
+@dashboard_bp.route('/me')
+@login_required
+def personalized():
+    """Personalized Dashboard -- the hub for prediction history, saved
+    predictions, saved/favorite vehicles, saved reports, usage
+    statistics, and recent activity, all in one place.
+    """
+    return render_template('dashboard/personalized.html')
+
+
+@dashboard_bp.route('/usage-stats')
+@login_required
+def usage_stats_page():
+    return render_template('dashboard/usage_stats.html')
+
+
+@dashboard_bp.route('/activity')
+@login_required
+def activity_page():
+    return render_template('dashboard/activity.html')
+
+
+@dashboard_bp.route('/api/activity')
+@login_required
+def api_activity():
+    limit = min(request.args.get('limit', 20, type=int), 100)
+    return jsonify(analytics_service.recent_activity(current_user.id, limit=limit))

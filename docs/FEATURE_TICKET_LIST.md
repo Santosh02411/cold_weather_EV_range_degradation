@@ -69,3 +69,67 @@ this folder — keep IDs stable if you reorder/reprioritize.
 | UX-5 | Export a trip briefing as a shareable link and/or PDF | ✅ Done — `Prediction.share_token` (generated on demand), public read-only `/predictions/share/<token>` view (no login), revoke endpoint, and a PDF export reusing `reports.py`'s existing reportlab pattern |
 | UX-6 | Model comparison view — show each model's individual prediction, not just the ensemble result | ✅ Done — `predict.py` now returns `individual_predictions` per model; rendered as a small comparison bar chart under the confidence section |
 | UX-7 | "Confidence explains itself" — a tooltip explaining what the confidence score actually measures | ✅ Done — hover tooltip on the confidence label explaining ensemble disagreement in plain language |
+
+## Phase 6 — User Dashboard
+
+| ID | Title | Status |
+|---|---|---|
+| UD-1 | "User Dashboard" sidebar section with Personalized Dashboard hub page | ✅ Done — `/dashboard/me`, quick stats + jump-links + activity preview |
+| UD-2 | Prediction History as a real page (was API-only) | ✅ Done — `/predictions/history` |
+| UD-3 | Saved Predictions (bookmark a prediction) | ✅ Done — new `SavedPrediction` model, save/unsave endpoints, `/predictions/saved` |
+| UD-4 | Saved Vehicles page | ✅ Done — `/vehicles/saved`, backed by existing `RecentlyViewedVehicle` data |
+| UD-5 | Favorite Vehicles as a dedicated page (was filter-only on the catalog) | ✅ Done — `/vehicles/favorites` |
+| UD-6 | Saved Reports nav entry | ✅ Done — links to existing Reports page (already has Report History) |
+| UD-7 | Usage Statistics page | ✅ Done — `/dashboard/usage-stats`, renders existing `user_analytics()` data |
+| UD-8 | Recent Activity feed | ✅ Done — `analytics.recent_activity()` merges predictions/trips/favorites/saves/reports; `/dashboard/activity` page + `/dashboard/api/activity` |
+
+See `docs/MEMORY.md` "Phase 6" for the reasoning behind each data-source choice.
+
+## Phase 7 — Admin Dashboard
+
+| ID | Title | Status |
+|---|---|---|
+| AD-1 | "Admin Dashboard" sidebar section (admin-only) | ✅ Done — 10 links added to `base.html`, gated on `current_user.is_admin` |
+| AD-2 | User Management nav entry | ✅ Done — links to existing `/admin/users` |
+| AD-3 | Vehicle Management page | ✅ Done — `/admin/vehicles`, shows soft-deleted vehicles too, with reactivate toggle |
+| AD-4 | Dataset Management nav entry | ✅ Done — links to existing `/datasets/` |
+| AD-5 | ML Model Management nav entry | ✅ Done — links to existing `/admin/ml-dashboard` |
+| AD-6 | Weather API Monitoring | ✅ Done — new `WeatherLog.data_source`/`error_note` columns, `/admin/weather-monitoring` |
+| AD-7 | Feedback Management | ✅ Done — moderation UI for `CommunityRangeReport.is_flagged` (flag/unflag/delete), `/admin/feedback` |
+| AD-8 | Prediction Statistics nav entry | ✅ Done — links to existing `/admin/analytics` |
+| AD-9 | System Logs | ✅ Done — merged `LoginHistory` + drift-check feed, `/admin/system-logs` |
+| AD-10 | Analytics Dashboard (fleet-wide) | ✅ Done — `/admin/fleet-dashboard`, reuses existing `/admin/api/fleet-stats` |
+| AD-11 | Report Management (admin-wide) | ✅ Done — read-only cross-user view, `/admin/reports` |
+
+See `docs/MEMORY.md` "Phase 7" for the reasoning behind each data-source choice.
+
+## Phase 8 — Notifications
+
+| ID | Title | Status |
+|---|---|---|
+| NOT-1 | "Notifications" sidebar section | ✅ Done — 8 links added to `base.html` |
+| NOT-2 | Low Battery Alerts | ✅ Done — synchronous check after trip simulation, against real `estimated_arrival_battery_pct` |
+| NOT-3 | Severe Weather Alerts nav entry | ✅ Done — links to existing `/alerts` (FEAT-3), not duplicated |
+| NOT-4 | Charging Reminder | ✅ Done — new scheduler job, checks upcoming `ChargingReservation`s within lead time |
+| NOT-5 | Battery Health Warning | ✅ Done — synchronous check after a SOH reading is logged |
+| NOT-6 | Maintenance Reminder | ✅ Done — new scheduler job, grounded in logged odometer readings + user-set baseline |
+| NOT-7 | Email Notifications | ✅ Done — reuses existing `User.email_notifications_enabled`, control moved to `/notifications/preferences` |
+| NOT-8 | Push Notifications | ✅ Done — real browser `Notification` API + permission flow, honestly scoped to tab-open-only |
+| NOT-9 | In-App Notifications | ✅ Done — new `Notification`/`NotificationPreference` models, full inbox at `/notifications/` |
+
+See `docs/MEMORY.md` "Phase 8" for the reasoning behind each data-source and scoping choice.
+
+## Phase 9 — Cost Analysis
+
+| ID | Title | Status |
+|---|---|---|
+| COST-1 | "Cost Analysis" sidebar section | ✅ Done — 7 links added to `base.html` |
+| COST-2 | Charging Cost Calculator | ✅ Done — `/cost/`, wraps existing `charging_cost.estimate_charging_cost()`, defaults to the user's saved rate |
+| COST-3 | Electricity Price Integration | ✅ Done — new `CostPreference` model + `services/electricity_rates.py` regional-average lookup table, `/cost/preferences` |
+| COST-4 | Monthly Charging Cost | ✅ Done — dedicated page over existing `analytics_service.cost_analytics()`, now rate-preference-aware, `/cost/monthly` |
+| COST-5 | EV vs Petrol Cost Comparison | ✅ Done — new `services/fuel_cost.py::compare_ev_vs_petrol()`, `/cost/compare` |
+| COST-6 | Ownership Cost Analysis | ✅ Done — same engine + purchase price/maintenance, `/cost/ownership` |
+| COST-7 | Savings Calculator | ✅ Done — same engine + optional payback period, `/cost/savings` |
+| COST-8 | Charging Cost History | ✅ Done — new `ChargingSession` model, a real logged ledger distinct from Monthly Charging Cost's projection, `/cost/history` |
+
+See `docs/MEMORY.md` "Phase 9" for the reasoning behind each data-source and scoping choice.

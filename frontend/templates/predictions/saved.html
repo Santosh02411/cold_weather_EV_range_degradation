@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Saved Predictions — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🔖 Saved Predictions{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Bookmarked Predictions</h3>
+            <a href="{{ url_for('predictions.history_page') }}" class="btn btn-outline btn-sm">🕘 View Full History</a>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+            Predictions you've deliberately bookmarked for quick reference — not your full history.
+        </p>
+        <div id="savedList" class="table-container"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function unsave(predictionId) {
+    try {
+        await apiFetch(`/predictions/api/${predictionId}/save`, { method: 'DELETE' });
+        loadSaved();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+async function loadSaved() {
+    const el = document.getElementById('savedList');
+    try {
+        const predictions = await apiFetch('/predictions/api/saved');
+        if (!predictions.length) {
+            el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No saved predictions yet. Bookmark one from <a href="' + "{{ url_for('predictions.history_page') }}" + '">Prediction History</a>.</p>';
+            return;
+        }
+        const rows = predictions.map(p => `
+            <tr>
+                <td>${new Date(p.saved_at).toLocaleString()}</td>
+                <td>${p.vehicle ? `${p.vehicle.manufacturer} ${p.vehicle.model_name}` : '—'}</td>
+                <td>${p.temperature_c}°C</td>
+                <td>${p.range_degradation_pct != null ? p.range_degradation_pct.toFixed(1) + '%' : '—'}</td>
+                <td>${p.predicted_range_km != null ? Math.round(p.predicted_range_km) + ' km' : '—'}</td>
+                <td><button class="btn btn-outline btn-sm" onclick="unsave(${p.id})">✕ Remove</button></td>
+            </tr>`).join('');
+        el.innerHTML = `<table><thead><tr><th>Saved</th><th>Vehicle</th><th>Temp</th><th>Degradation</th><th>Predicted Range</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', loadSaved);
+</script>
+{% endblock %}

@@ -3,31 +3,176 @@
 {% block page_title %}📄 Report Generation{% endblock %}
 {% block content %}
 <div class="animate-fade">
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;">
-        <div class="card">
-            <div style="text-align:center;padding:20px 0;">
-                <p style="font-size:48px;margin-bottom:12px;">📊</p>
-                <h3 style="color:var(--text-primary);font-size:18px;font-weight:700;">Prediction Report (CSV)</h3>
-                <p style="color:var(--text-muted);font-size:13px;margin:12px 0;">Export all your prediction history including temperature, degradation, energy consumption, and model used.</p>
-                <a href="{{ url_for('reports.export_predictions_csv') }}" class="btn btn-primary">📥 Download CSV</a>
-            </div>
+
+    <div class="card">
+        <div class="card-header"><h3 class="card-title">📥 Export a Report</h3></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+            <select id="exportReportType" class="form-control" style="max-width:180px;">
+                <option value="predictions">Predictions</option>
+                <option value="trips">Trips</option>
+                <option value="summary">Summary</option>
+            </select>
+            <a id="csvLink" href="{{ url_for('reports.export_predictions_csv') }}" class="btn btn-outline">📄 CSV</a>
+            <button class="btn btn-outline" onclick="downloadExcel()">📊 Excel</button>
+            <button class="btn btn-outline" onclick="downloadJson()">🧾 JSON</button>
+            <a href="{{ url_for('reports.export_pdf') }}" class="btn btn-outline">📕 PDF Summary</a>
+            <a href="{{ url_for('reports.printable_dashboard') }}" class="btn btn-primary" target="_blank">🖨️ Printable Dashboard</a>
         </div>
+        <p style="font-size:11px;color:var(--text-muted);">CSV/PDF for predictions and trips work directly from the buttons above; Excel and JSON respect the report type selected.</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
         <div class="card">
-            <div style="text-align:center;padding:20px 0;">
-                <p style="font-size:48px;margin-bottom:12px;">🗺️</p>
-                <h3 style="color:var(--text-primary);font-size:18px;font-weight:700;">Trip Report (CSV)</h3>
-                <p style="color:var(--text-muted);font-size:13px;margin:12px 0;">Export trip simulation history with battery usage, charging stops, and arrival battery levels.</p>
-                <a href="{{ url_for('reports.export_trips_csv') }}" class="btn btn-primary">📥 Download CSV</a>
+            <div class="card-header"><h3 class="card-title">⏰ Scheduled Reports</h3></div>
+            <div id="schedulesList"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+            <button class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="openScheduleForm()">+ New schedule</button>
+            <div id="scheduleForm" style="display:none;margin-top:12px;">
+                <div class="form-row">
+                    <input type="text" id="scheduleName" class="form-control" placeholder="Schedule name">
+                </div>
+                <div class="form-row">
+                    <select id="scheduleType" class="form-control">
+                        <option value="predictions">Predictions</option>
+                        <option value="trips">Trips</option>
+                        <option value="summary">Summary</option>
+                    </select>
+                    <select id="scheduleFormat" class="form-control">
+                        <option value="csv">CSV</option>
+                        <option value="xlsx">Excel</option>
+                        <option value="json">JSON</option>
+                        <option value="pdf">PDF</option>
+                    </select>
+                    <select id="scheduleFrequency" class="form-control">
+                        <option value="daily">Daily</option>
+                        <option value="weekly" selected>Weekly</option>
+                        <option value="monthly">Monthly</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="createSchedule()">Save</button>
             </div>
+            <p style="font-size:11px;color:var(--text-muted);margin-top:10px;">
+                Reports are emailed to your account email when due. If email isn't configured on this
+                deployment, the send is still logged in Report History below with a note explaining why.
+            </p>
         </div>
+
         <div class="card">
-            <div style="text-align:center;padding:20px 0;">
-                <p style="font-size:48px;margin-bottom:12px;">📄</p>
-                <h3 style="color:var(--text-primary);font-size:18px;font-weight:700;">Summary Report (PDF)</h3>
-                <p style="color:var(--text-muted);font-size:13px;margin:12px 0;">Generate a comprehensive PDF report with all predictions, charts, and vehicle performance data.</p>
-                <a href="{{ url_for('reports.export_pdf') }}" class="btn btn-success">📥 Download PDF</a>
-            </div>
+            <div class="card-header"><h3 class="card-title">🕘 Report History</h3></div>
+            <div id="historyList" class="table-container"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
         </div>
     </div>
+
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+function selectedReportType() {
+    return document.getElementById('exportReportType').value;
+}
+
+document.getElementById('exportReportType')?.addEventListener('change', () => {
+    const type = selectedReportType();
+    const csvLink = document.getElementById('csvLink');
+    csvLink.href = type === 'trips' ? "{{ url_for('reports.export_trips_csv') }}" : "{{ url_for('reports.export_predictions_csv') }}";
+    csvLink.style.display = type === 'summary' ? 'none' : 'inline-flex';
+});
+
+function downloadExcel() {
+    window.location.href = `/reports/api/excel/${selectedReportType()}`;
+}
+
+function downloadJson() {
+    window.location.href = `/reports/api/json/${selectedReportType()}`;
+}
+
+async function loadSchedules() {
+    const el = document.getElementById('schedulesList');
+    try {
+        const schedules = await apiFetch('/reports/api/schedules');
+        if (!schedules.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No scheduled reports yet.</p>'; return; }
+        el.innerHTML = schedules.map(s => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-color);">
+                <div>
+                    <strong>${s.name}</strong> <span class="badge ${s.enabled ? 'badge-green' : 'badge-amber'}">${s.enabled ? 'active' : 'paused'}</span>
+                    <div style="font-size:12px;color:var(--text-muted);">${s.report_type} · ${s.format.toUpperCase()} · ${s.frequency} · last sent: ${s.last_sent_at ? new Date(s.last_sent_at).toLocaleDateString() : 'never'}</div>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn btn-outline btn-sm" onclick="sendScheduleNow(${s.id})">Send now</button>
+                    <button class="btn btn-outline btn-sm" onclick="toggleSchedule(${s.id}, ${!s.enabled})">${s.enabled ? 'Pause' : 'Resume'}</button>
+                    <button class="btn btn-outline btn-sm" onclick="deleteSchedule(${s.id})">✕</button>
+                </div>
+            </div>`).join('');
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+function openScheduleForm() {
+    document.getElementById('scheduleForm').style.display = 'block';
+}
+
+async function createSchedule() {
+    const name = document.getElementById('scheduleName').value.trim();
+    if (!name) { showAlert('danger', 'Give this schedule a name.'); return; }
+    try {
+        await apiFetch('/reports/api/schedules', {
+            method: 'POST',
+            body: JSON.stringify({
+                name,
+                report_type: document.getElementById('scheduleType').value,
+                format: document.getElementById('scheduleFormat').value,
+                frequency: document.getElementById('scheduleFrequency').value,
+            }),
+        });
+        showAlert('success', 'Schedule created.');
+        document.getElementById('scheduleForm').style.display = 'none';
+        loadSchedules();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+async function toggleSchedule(id, enabled) {
+    try {
+        await apiFetch(`/reports/api/schedules/${id}`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
+        loadSchedules();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+async function deleteSchedule(id) {
+    if (!confirm('Delete this schedule?')) return;
+    try {
+        await apiFetch(`/reports/api/schedules/${id}`, { method: 'DELETE' });
+        loadSchedules();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+async function sendScheduleNow(id) {
+    try {
+        const result = await apiFetch(`/reports/api/schedules/${id}/send-now`, { method: 'POST' });
+        showAlert('success', result.delivered_via_email ? 'Report emailed.' : `Report generated (email: ${result.email_status}).`);
+        loadSchedules();
+        loadHistory();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+async function loadHistory() {
+    const el = document.getElementById('historyList');
+    try {
+        const history = await apiFetch('/reports/api/history');
+        if (!history.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No reports generated yet.</p>'; return; }
+        const rows = history.map(h => `
+            <tr>
+                <td>${new Date(h.generated_at).toLocaleString()}</td>
+                <td>${h.report_type}</td>
+                <td>${h.format.toUpperCase()}</td>
+                <td>${h.source}</td>
+                <td>${h.row_count ?? '—'}</td>
+                <td>${h.delivered_via_email ? '<span class="badge badge-green">emailed</span>' : (h.source === 'scheduled' ? `<span class="badge badge-amber">${h.email_status}</span>` : '—')}</td>
+            </tr>`).join('');
+        el.innerHTML = `<table><thead><tr><th>Generated</th><th>Type</th><th>Format</th><th>Source</th><th>Rows</th><th>Email</th></tr></thead><tbody>${rows}</tbody></table>`;
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadSchedules();
+    loadHistory();
+});
+</script>
 {% endblock %}

@@ -85,6 +85,12 @@ def simulate():
     db.session.add(trip)
     db.session.commit()
 
+    try:
+        from ..services.notifications import check_low_battery_after_trip
+        check_low_battery_after_trip(trip)
+    except Exception as e:
+        current_app.logger.warning(f"[notifications] low-battery check failed: {e}")
+
     return jsonify({
         'trip': trip.to_dict(),
         'degradation': result,

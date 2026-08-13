@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Ownership Cost Analysis — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🧾 Ownership Cost Analysis{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        Purchase price + charging/fuel + maintenance over time. Maintenance figures are documented generic
+        estimates, not a quote for any specific vehicle — override them if you have better numbers.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Ownership Details</h3></div>
+            <form id="ownershipForm">
+                <div class="form-group">
+                    <label class="form-label">EV</label>
+                    <select name="vehicle_id" id="ownershipVehicleSelect" class="form-control" required>
+                        <option value="">-- Choose Vehicle --</option>
+                        {% for v in vehicles %}
+                        <option value="{{ v.id }}" data-price="{{ v.price_usd or '' }}">{{ v.manufacturer }} {{ v.model_name }}{% if v.price_usd %} (~${{ '{:,.0f}'.format(v.price_usd) }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">EV purchase price ($)</label>
+                        <input type="number" name="ev_purchase_price_usd" id="evPriceInput" class="form-control" step="100" min="0" placeholder="Uses catalog price if known">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Petrol car purchase price ($)</label>
+                        <input type="number" name="petrol_purchase_price_usd" class="form-control" step="100" min="0" placeholder="No default — enter to compare">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">EV annual maintenance ($)</label>
+                        <input type="number" name="annual_maintenance_ev_usd" class="form-control" step="10" min="0" placeholder="Default: $400/yr">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Petrol annual maintenance ($)</label>
+                        <input type="number" name="annual_maintenance_petrol_usd" class="form-control" step="10" min="0" placeholder="Default: $700/yr">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Ownership period (years)</label>
+                    <input type="number" name="years" class="form-control" value="5" min="1" max="20">
+                </div>
+                <button type="submit" class="btn btn-primary">🧾 Analyze</button>
+            </form>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Result</h3></div>
+            <div id="ownershipResult"><p style="color:var(--text-muted);font-size:13px;">Choose a vehicle and analyze.</p></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('ownershipVehicleSelect').addEventListener('change', (e) => {
+    const price = e.target.selectedOptions[0]?.dataset.price;
+    if (price) document.getElementById('evPriceInput').placeholder = `Catalog price: $${parseFloat(price).toLocaleString()}`;
+});
+
+document.getElementById('ownershipForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const body = { vehicle_id: parseInt(form.get('vehicle_id')), years: parseInt(form.get('years')) };
+    ['ev_purchase_price_usd', 'petrol_purchase_price_usd', 'annual_maintenance_ev_usd', 'annual_maintenance_petrol_usd'].forEach(f => {
+        if (form.get(f)) body[f] = parseFloat(form.get(f));
+    });
+
+    const el = document.getElementById('ownershipResult');
+    try {
+        const r = await apiFetch('/cost/api/ownership', { method: 'POST', body: JSON.stringify(body) });
+        el.innerHTML = `
+            <table><tbody>
+                <tr><td>Purchase price</td><td>${r.ev.purchase_price_usd != null ? '$' + r.ev.purchase_price_usd.toLocaleString() + (r.ev.purchase_price_is_estimated ? ' (catalog est.)' : '') : '—'}</td><td>${r.petrol.purchase_price_usd != null ? '$' + r.petrol.purchase_price_usd.toLocaleString() : '—'}</td></tr>
+                <tr><td>${r.years}-year running cost</td><td>$${r.ev.total_cost_usd}</td><td>$${r.petrol.total_cost_usd}</td></tr>
+                <tr><td>${r.years}-year maintenance</td><td>$${r.ev.total_maintenance_usd}</td><td>$${r.petrol.total_maintenance_usd}</td></tr>
+                <tr><td><strong>Total cost of ownership</strong></td><td><strong>$${r.ev.total_ownership_cost_usd.toLocaleString()}</strong></td><td><strong>$${r.petrol.total_ownership_cost_usd.toLocaleString()}</strong></td></tr>
+            </tbody></table>
+            <div class="stat-card" style="margin-top:14px;">
+                <div class="stat-icon ${r.total_savings_usd >= 0 ? 'green' : 'red'}">💰</div>
+                <div><div class="stat-value">$${r.total_savings_usd.toLocaleString()}</div><div class="stat-label">Total ${r.total_savings_usd >= 0 ? 'Savings' : 'Extra Cost'} vs Petrol</div></div>
+            </div>
+            ${r.purchase_price_note ? `<p style="font-size:11px;color:var(--text-muted);margin-top:10px;">${r.purchase_price_note}</p>` : ''}`;
+    } catch (err) { el.innerHTML = `<p style="color:var(--accent-red);font-size:13px;">${err.message}</p>`; }
+});
+</script>
+{% endblock %}

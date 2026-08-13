@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Usage Statistics — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}📈 Usage Statistics{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p id="memberSince" style="font-size:12px;color:var(--text-muted);margin-bottom:14px;"></p>
+    <div class="stats-grid" id="usageStatsGrid">
+        <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadUsageStats() {
+    const el = document.getElementById('usageStatsGrid');
+    try {
+        const s = await apiFetch('/dashboard/api/analytics/user');
+        el.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-icon purple">🤖</div>
+                <div><div class="stat-value">${s.total_predictions}</div><div class="stat-label">Total Predictions</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon blue">🗺️</div>
+                <div><div class="stat-value">${s.total_trips_simulated}</div><div class="stat-label">Trips Simulated</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon green">🌍</div>
+                <div><div class="stat-value">${s.total_community_reports}</div><div class="stat-label">Community Reports</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon red">❤️</div>
+                <div><div class="stat-value">${s.favorite_vehicles_count}</div><div class="stat-label">Favorite Vehicles</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon purple">📉</div>
+                <div><div class="stat-value">${s.avg_degradation_pct != null ? s.avg_degradation_pct.toFixed(1) + '%' : '--'}</div><div class="stat-label">Avg Range Degradation</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon blue">🎯</div>
+                <div><div class="stat-value">${s.avg_confidence != null ? (s.avg_confidence * 100).toFixed(0) + '%' : '--'}</div><div class="stat-label">Avg Prediction Confidence</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon green">🔥</div>
+                <div><div class="stat-value">${s.current_activity_streak_days}</div><div class="stat-label">Day Activity Streak</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon purple">🧠</div>
+                <div><div class="stat-value" style="font-size:16px;">${s.most_used_model || '--'}</div><div class="stat-label">Most-Used Model</div></div>
+            </div>
+        `;
+        const memberSince = document.getElementById('memberSince');
+        if (memberSince && s.member_since) {
+            memberSince.textContent = `Member since ${new Date(s.member_since).toLocaleDateString()}`;
+        }
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', loadUsageStats);
+</script>
+{% endblock %}

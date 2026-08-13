@@ -555,3 +555,222 @@ any of Phase 1's calibration work against the new combined output.
 Keeping it as a separate, clearly-labeled estimate avoids
 contaminating a more rigorously grounded number with a less rigorous
 one.
+
+---
+
+## Phase 6 — User Dashboard (sidebar hub)
+
+**Decision: "Saved Predictions" is a new bookmark table
+(`SavedPrediction`), not a repurposing of `share_token`.**
+Why: `share_token` (UX-5) answers "can a stranger view this without
+logging in" -- an orthogonal concern to "do I personally want this
+pinned for quick reference." Overloading share-token-is-set to also
+mean "saved" would make revoking a share link accidentally unsave a
+prediction the user still wanted bookmarked, and vice versa. A
+separate join table, same shape as `FavoriteVehicle`
+(`vehicle_interactions.py`), keeps the two concerns independent and
+matches this project's existing "one small join table per interaction"
+pattern instead of inventing a second one.
+
+**Decision: "Saved Vehicles" in the sidebar is backed by the existing
+`RecentlyViewedVehicle` table, not a new model.**
+Why: `EVVehicle` has no per-user ownership column (it's a shared
+catalog, not a garage), so "saved" can't mean "vehicles I added."
+`RecentlyViewedVehicle` was already the only other real per-user
+vehicle-interaction table besides favorites, already auto-populated by
+`record_view()`, and already capped at 20 entries. Renaming its
+surfaced label to "Saved Vehicles" (with a one-line explanation on the
+page itself, and a link over to Favorites for anything meant to stick
+around) was more honest than inventing a second, functionally
+identical bookmarking table that would just duplicate
+`SavedPrediction`'s job for a different model.
+
+**Decision: Recent Activity is a merged read across five existing
+tables (`recent_activity()` in `services/analytics.py`), not a new
+`ActivityLog` table written on every user action.**
+Why: an `ActivityLog` table would need a write hook added to every
+existing action (predict, simulate trip, favorite, save, generate
+report) -- more surface area for the log to silently drift out of sync
+with what actually happened, for a feature that's read far more rarely
+than it would be written. Every one of those actions already has its
+own authoritative row in its own table; merging five small
+`user_id`-scoped queries at read time is slower per-request but can
+never desync from the real data, and needed zero changes to any
+existing write path. Revisit only if this feed needs to show action
+types that don't already have a backing table of their own.
+
+**Decision: the "User Dashboard" sidebar section links out to
+existing feature pages (Reports, the vehicle catalog's favorites
+filter) rather than cloning their data into new dashboard-only views.**
+Why: Report History (`reports/index.html`) and the favorites/recently-
+viewed data were already fully built, tested surfaces. A second copy
+of the same table on a new page would be one more place for the two
+to drift out of sync (same "one shared implementation, not a second
+copy" convention `feature_engineering.py` already documents) --
+Favorite Vehicles got its own thin page anyway since the catalog page
+buries it behind a filter checkbox, but Saved Reports links straight
+to the existing Reports page rather than re-rendering its history
+table a second time.
+
+---
+
+## Phase 7 — Admin Dashboard (sidebar hub)
+
+**Decision: "Feedback Management" moderates `CommunityRangeReport` via
+its existing `is_flagged` column, rather than a new feedback/bug-report
+system.** Why: there was no other "feedback" concept anywhere in this
+app to build a UI for -- but `is_flagged` on community reports has
+existed since FEAT-4 specifically so a moderation feature could be
+added without a schema change, and it was never actually wired to
+anything. `community.list_reports()` already excludes flagged reports
+from the public feed, and the recalibration pipeline already excludes
+them from retraining data -- so this UI activates two enforcement
+paths that were already live and silently waiting for an admin control
+surface, rather than adding a new one.
+
+**Decision: "System Logs" merges `LoginHistory` (already written on
+every login attempt) with the live-retrain drift-check history, read
+at request time -- no new `SystemLog`/audit table.** Same reasoning as
+Phase 6's `recent_activity()`: every event surfaced here already has
+its own authoritative row for its own reason (security audit trail,
+drift monitoring), so merging at read time can't drift out of sync
+with what actually happened, and needed zero new write hooks.
+
+**Decision: "Weather API Monitoring" required two new nullable columns
+on `WeatherLog` (`data_source`, `error_note`)**, unlike every other
+Admin Dashboard page. Why: this is the one case where the data
+literally didn't exist anywhere yet -- `get_current_weather()` already
+computed live-vs-demo-fallback status transiently per-request but
+never persisted it, so there was nothing to aggregate retroactively.
+Both columns are nullable specifically so older `WeatherLog` rows
+(from before this phase) don't need a backfill -- they just show as
+"unknown" source, which the admin page states plainly rather than
+guessing.
+
+**Decision: "Analytics Dashboard" is a new page over the existing
+`/admin/api/fleet-stats` endpoint (already used by the panel's
+embedded Fleet Dashboard section), not a new data source.** "Prediction
+Statistics" (the existing `/admin/analytics` -- per-model accuracy,
+daily prediction counts) and "Analytics Dashboard" (whole-app usage:
+users, vehicles, trips, community reports, top users) were kept as two
+separate sidebar links because they answer different questions, but
+both reuse data that already existed rather than each computing their
+own copy.
+
+**Decision: "Vehicle Management" and "Report Management" are
+admin-wide *views* over existing per-user-scoped data, not new write
+paths.** Vehicle Management surfaces `is_active=False` vehicles (the
+public catalog always filters them out, and there was previously no
+way to see -- or undo -- a soft-delete). Report Management shows every
+user's `ReportSchedule`/`ReportHistory` rows, read-only; editing a
+schedule stays the owner's action from their own Reports page, exactly
+like Phase 6 kept Saved Reports pointed at the existing per-user
+Reports page instead of cloning it.
+
+---
+
+## Phase 8 — Notifications (sidebar hub)
+
+**Decision: Severe Weather Alerts has NO toggle in the new
+`NotificationPreference` table.** It already has its own dedicated,
+richer subscription model (`AlertSubscription`: per-location,
+per-threshold, multiple subscriptions per user, own scheduler job)
+from FEAT-3. A single boolean here would be strictly worse than what
+already exists, so the sidebar item just links straight to the
+existing `/alerts` page instead of duplicating a weaker version of it.
+
+**Decision: Low Battery Alerts and Battery Health Warning are checked
+synchronously (right when a trip is simulated / a SOH reading is
+logged), not on a scheduler tick.** Both need data that's only computed
+once, right at that moment (`estimated_arrival_battery_pct`, a new
+`soh_pct` reading) -- there's no ongoing state to poll between then and
+now, so a periodic job would just be re-checking the same already-known
+answer. Charging Reminder and Maintenance Reminder DO need a scheduler
+job, because "is now within N minutes of an upcoming reservation" and
+"has the odometer passed the service threshold" are both time-dependent
+questions that need to be re-asked as time passes, not just once at
+write time.
+
+**Decision: Maintenance Reminder is grounded in
+`BatteryHealthRecord.odometer_km`** (the only mileage data this app
+tracks anywhere) **compared against a user-set interval + baseline**,
+not a real service-history log. This app has no concept of "vehicle
+maintenance" at all otherwise (no service records, no dealer
+integration) -- rather than inventing one, the reminder reuses data a
+user already has a reason to log (via Battery Health) and asks them to
+set one baseline (`/notifications/api/maintenance/mark-serviced`)
+before it activates. Deliberately opt-in (`maintenance_reminders_enabled`
+defaults False) since, unlike the other three alert types, it can't
+produce a meaningful answer until the user has done that one-time setup.
+
+**Decision: Push Notifications is real (uses the browser's
+`Notification` API and requests permission), but explicitly scoped to
+"while this tab is open."** True push notifications that work with the
+tab closed need a service worker + a push subscription server (VAPID
+keys, a push endpoint, background sync) -- infrastructure this project
+doesn't have and that's out of scope to bootstrap for one toggle. The
+preferences page says this outright rather than implying more than
+what's actually implemented, same as `charging_reservation.py`'s
+docstring being upfront that reservations aren't real bookings with any
+charging network.
+
+**Decision: Email Notifications' master switch stays on `User`
+(`email_notifications_enabled`, pre-existing) rather than being
+duplicated onto `NotificationPreference`.** `NotificationPreference.to_dict()`
+reads it through the relationship so the API still returns one flat
+preferences object; the notification-type-specific toggles (which
+notifications are even eligible to email) live on
+`NotificationPreference`, and the single account-wide on/off switch
+stays exactly where it already was. `profile.html`'s existing
+notification form was trimmed to just the two things that are genuinely
+account-level (email master switch, new-device security alerts) and now
+points to `/notifications/preferences` for everything else, rather than
+forking the same settings across two pages.
+
+---
+
+## Phase 9 — Cost Analysis (sidebar hub)
+
+**Decision: Electricity Price Integration is a regional-average lookup
+table + a per-user saved-rate override, NOT a live utility-rate API.**
+There's no free public API for residential electricity pricing the
+way OpenWeatherMap exists for weather -- so, same honesty convention
+as `charging_cost.py`'s `DEFAULT_RATES_USD_PER_KWH`,
+`services/electricity_rates.py` is an explicitly-labeled table of
+documented averages a user can pick from to prefill their own rate,
+never presented as their actual bill. Every other Cost Analysis
+feature reads through one resolver
+(`services/cost_preferences.py::get_effective_rates()`) so "what rate
+did this calculation use" always has one answer, and every result
+labels whether it came from the user's own saved rate or a default.
+
+**Decision: EV vs Petrol Cost Comparison, Ownership Cost Analysis, and
+Savings Calculator share ONE engine
+(`services/fuel_cost.py::compare_ev_vs_petrol()`).** They differ only
+in which extra inputs get layered on top (purchase price + maintenance
+for Ownership; an optional price premium + payback period for
+Savings) and how the result is framed -- not in the underlying
+cost-per-km math. Petrol-side defaults (price/liter, L/100km, annual
+km) are documented generic estimates, explicitly not a specific
+make/model, since this app has no petrol vehicle catalog and no live
+fuel-price feed to draw real ones from.
+
+**Decision: Ownership Cost Analysis defaults the EV purchase price
+from `EVVehicle.price_usd` where set, but has NO default for the
+petrol side.** The vehicle catalog already carries an (unverified,
+nullable) approximate MSRP for exactly this kind of estimate; there's
+no equivalent petrol-car catalog to draw a default from, so the result
+says outright when a purchase-price comparison couldn't be completed
+rather than silently comparing running costs alone as if that were the
+whole picture.
+
+**Decision: Charging Cost History (`ChargingSession`, a real logged
+ledger) is a SEPARATE feature from Monthly Charging Cost
+(`analytics_service.cost_analytics()`, which projects spend from
+*simulated* trip energy).** Conflating "what you told us you actually
+paid" with "what your simulated driving would cost" would misrepresent
+one as the other. Both pages say explicitly which kind of number
+they're showing and link to the other. A session's cost can be left
+blank and auto-estimated from the user's saved rate (flagged
+`is_cost_estimated: true`) rather than forcing manual entry for every
+log, but a user-entered figure is never overwritten by an estimate.

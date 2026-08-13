@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Savings Calculator — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}💰 Savings Calculator{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        How much switching to this EV would save on running costs — and, if you paid more up front for it,
+        how long that premium takes to pay back. For the full purchase + maintenance breakdown, see
+        <a href="{{ url_for('cost.ownership_page') }}">Ownership Cost Analysis</a>.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Your Switch</h3></div>
+            <form id="savingsForm">
+                <div class="form-group">
+                    <label class="form-label">EV</label>
+                    <select name="vehicle_id" class="form-control" required>
+                        <option value="">-- Choose Vehicle --</option>
+                        {% for v in vehicles %}
+                        <option value="{{ v.id }}">{{ v.manufacturer }} {{ v.model_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Extra you'd pay for the EV vs. your petrol car ($)</label>
+                    <input type="number" name="ev_price_premium_usd" class="form-control" step="100" min="0" placeholder="Optional — leave blank to skip payback period">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Projection horizon (years)</label>
+                    <input type="number" name="years" class="form-control" value="3" min="1" max="20">
+                </div>
+                <button type="submit" class="btn btn-primary">💰 Calculate Savings</button>
+            </form>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Result</h3></div>
+            <div id="savingsResult"><p style="color:var(--text-muted);font-size:13px;">Choose a vehicle and calculate.</p></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('savingsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const body = { vehicle_id: parseInt(form.get('vehicle_id')), years: parseInt(form.get('years')) };
+    if (form.get('ev_price_premium_usd')) body.ev_price_premium_usd = parseFloat(form.get('ev_price_premium_usd'));
+
+    const el = document.getElementById('savingsResult');
+    try {
+        const r = await apiFetch('/cost/api/savings', { method: 'POST', body: JSON.stringify(body) });
+        el.innerHTML = `
+            <div class="stat-card" style="margin-bottom:12px;">
+                <div class="stat-icon ${r.annual_savings_usd >= 0 ? 'green' : 'red'}">💰</div>
+                <div><div class="stat-value">$${r.annual_savings_usd}/yr</div><div class="stat-label">Annual Savings</div></div>
+            </div>
+            <p style="font-size:13px;">Over ${r.years} year(s): <strong>$${r.total_savings_usd}</strong> total.</p>
+            ${r.payback_period_years != null ? `<p style="font-size:13px;margin-top:8px;">Payback period for the $${r.ev_price_premium_usd.toLocaleString()} premium: <strong>${r.payback_period_years} years</strong></p>` : ''}
+            ${r.payback_note ? `<p style="font-size:12px;color:var(--text-muted);margin-top:8px;">${r.payback_note}</p>` : ''}`;
+    } catch (err) { el.innerHTML = `<p style="color:var(--accent-red);font-size:13px;">${err.message}</p>`; }
+});
+</script>
+{% endblock %}

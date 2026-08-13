@@ -25,10 +25,11 @@ from datetime import datetime, timedelta
 
 import numpy as np
 
-from ..models.prediction import Prediction, TripSimulation, CommunityRangeReport
+from ..models.prediction import Prediction, TripSimulation, CommunityRangeReport, SavedPrediction
 from ..models.battery_health import BatteryHealthRecord
 from ..models.charging_reservation import ChargingReservation
 from ..models.vehicle_interactions import FavoriteVehicle
+from ..models.report import ReportHistory
 from ..models.ev_vehicle import EVVehicle
 from ..models.user import User
 from .. import db
@@ -415,3 +416,80 @@ def user_analytics(user_id):
         'avg_degradation_pct': _avg([p.range_degradation_pct for p in predictions]),
         'current_activity_streak_days': _current_streak_days(activity_dates),
     }
+
+
+def recent_activity(user_id, limit=20):
+    """Recent Activity: a single reverse-chronological feed merged
+    from every distinct thing a user actually does in this app
+    (predicting, simulating a trip, favoriting/saving, generating a
+    report), rather than five separate lists the user has to check.
+
+    Each source table already has its own dedicated list somewhere
+    (Prediction History, Trip history, Favorite Vehicles, Report
+    History) -- this doesn't replace any of those, it's a merged,
+    capped-at-`limit` view across all of them for a single "what have
+    I been doing" glance, same relationship the Personalized Dashboard
+    has to the more detailed pages it links out to.
+
+    Pulling `limit` rows from *each* source table (not one global
+    query) means this stays a handful of small, indexed
+    user_id+created_at queries -- cheap even as any one table grows --
+    at the cost of only being exactly accurate when a user has fewer
+    than `limit` very recent items in a single category, which is the
+    normal case this feed is for.
+    """
+    items = []
+
+    for p in Prediction.query.filter_by(user_id=user_id)\
+            .order_by(Prediction.created_at.desc()).limit(limit).all():
+        items.append({
+            'type': 'prediction',
+            'icon': '🤖',
+            'title': f'Ran a prediction ({p.temperature_c}°C, {p.vehicle.model_name if p.vehicle else "vehicle"})',
+            'timestamp': p.created_at.isoformat() if p.created_at else None,
+            'ref_id': p.id,
+        })
+
+    for t in TripSimulation.query.filter_by(user_id=user_id)\
+            .order_by(TripSimulation.created_at.desc()).limit(limit).all():
+        items.append({
+            'type': 'trip',
+            'icon': '🗺️',
+            'title': f'Simulated a trip: {t.source_location} → {t.destination}',
+            'timestamp': t.created_at.isoformat() if t.created_at else None,
+            'ref_id': t.id,
+        })
+
+    for f in FavoriteVehicle.query.filter_by(user_id=user_id)\
+            .order_by(FavoriteVehicle.created_at.desc()).limit(limit).all():
+        items.append({
+            'type': 'favorite_vehicle',
+            'icon': '❤️',
+            'title': f'Favorited {f.vehicle.manufacturer} {f.vehicle.model_name}' if f.vehicle else 'Favorited a vehicle',
+            'timestamp': f.created_at.isoformat() if f.created_at else None,
+            'ref_id': f.vehicle_id,
+        })
+
+    for s in SavedPrediction.query.filter_by(user_id=user_id)\
+            .order_by(SavedPrediction.created_at.desc()).limit(limit).all():
+        items.append({
+            'type': 'saved_prediction',
+            'icon': '🔖',
+            'title': f'Saved a prediction ({s.prediction.temperature_c}°C)' if s.prediction else 'Saved a prediction',
+            'timestamp': s.created_at.isoformat() if s.created_at else None,
+            'ref_id': s.prediction_id,
+        })
+
+    for r in ReportHistory.query.filter_by(user_id=user_id)\
+            .order_by(ReportHistory.generated_at.desc()).limit(limit).all():
+        items.append({
+            'type': 'report',
+            'icon': '📄',
+            'title': f'Generated a {r.report_type} report ({r.format.upper()})',
+            'timestamp': r.generated_at.isoformat() if r.generated_at else None,
+            'ref_id': r.id,
+        })
+
+    items = [i for i in items if i['timestamp']]
+    items.sort(key=lambda i: i['timestamp'], reverse=True)
+    return items[:limit]

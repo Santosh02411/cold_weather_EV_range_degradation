@@ -143,6 +143,22 @@ class Config:
     # recommendation radius (see services/route_planning.py).
     TRIP_SAFETY_MARGIN_PCT = float(os.environ.get('TRIP_SAFETY_MARGIN_PCT', '15'))
 
+    # Reports phase: Scheduled Reports periodic check, gated the same
+    # way as the alerts/live-retrain jobs above. A schedule's own
+    # frequency (daily/weekly/monthly, see models/report.py) controls
+    # how often a given user's report actually goes out -- this
+    # interval only controls how often the background job checks
+    # whether anything is due, so it should stay small relative to the
+    # shortest supported frequency (daily).
+    SCHEDULED_REPORTS_ENABLED = os.environ.get('SCHEDULED_REPORTS_ENABLED', 'false').lower() == 'true'
+    SCHEDULED_REPORTS_CHECK_INTERVAL_MINUTES = int(os.environ.get('SCHEDULED_REPORTS_CHECK_INTERVAL_MINUTES', '60'))
+
+    CHARGING_REMINDERS_ENABLED = os.environ.get('CHARGING_REMINDERS_ENABLED', 'true').lower() == 'true'
+    CHARGING_REMINDER_CHECK_INTERVAL_MINUTES = int(os.environ.get('CHARGING_REMINDER_CHECK_INTERVAL_MINUTES', '10'))
+    MAINTENANCE_REMINDERS_ENABLED = os.environ.get('MAINTENANCE_REMINDERS_ENABLED', 'true').lower() == 'true'
+    MAINTENANCE_REMINDER_CHECK_INTERVAL_MINUTES = int(os.environ.get('MAINTENANCE_REMINDER_CHECK_INTERVAL_MINUTES', '360'))
+    MAINTENANCE_REMINDER_COOLDOWN_DAYS = int(os.environ.get('MAINTENANCE_REMINDER_COOLDOWN_DAYS', '14'))
+
 class DevelopmentConfig(Config):
     DEBUG = True
 
@@ -160,6 +176,9 @@ class TestingConfig(Config):
     RATELIMIT_ENABLED = False
     ALERTS_ENABLED = False  # don't start the background scheduler during tests
     LIVE_RETRAIN_ENABLED = False  # ditto -- don't start the drift-check scheduler during tests
+    SCHEDULED_REPORTS_ENABLED = False  # ditto -- don't start the scheduled-reports scheduler during tests
+    CHARGING_REMINDERS_ENABLED = False  # ditto -- don't start the charging-reminder scheduler during tests
+    MAINTENANCE_REMINDERS_ENABLED = False  # ditto -- don't start the maintenance-reminder scheduler during tests
 
 config = {
     'development': DevelopmentConfig,

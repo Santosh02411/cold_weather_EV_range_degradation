@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Analytics Dashboard — Admin{% endblock %}
+{% block page_title %}📊 Analytics Dashboard{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        Whole-app usage across every user — for per-model prediction accuracy, see
+        <a href="{{ url_for('admin.analytics') }}">Prediction Statistics</a> instead.
+    </p>
+    <div id="fleetTotals" class="stats-grid" style="margin-bottom:20px;">
+        <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="card">
+            <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">Predictions by Vehicle</h4>
+            <div id="fleetByVehicle" class="table-container"></div>
+        </div>
+        <div class="card">
+            <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">Most Active Users</h4>
+            <div id="fleetTopUsers" class="table-container"></div>
+        </div>
+    </div>
+    <div style="margin-top:16px;"><a href="{{ url_for('admin.panel') }}" class="btn btn-outline">← Back to Admin Panel</a></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadFleetDashboard() {
+    const totals = document.getElementById('fleetTotals');
+    const byVehicle = document.getElementById('fleetByVehicle');
+    const topUsers = document.getElementById('fleetTopUsers');
+    try {
+        const s = await apiFetch('/admin/api/fleet-stats');
+        totals.innerHTML = `
+            <div class="stat-card"><div class="stat-icon blue">👥</div><div><div class="stat-value">${s.totals.users}</div><div class="stat-label">Users</div></div></div>
+            <div class="stat-card"><div class="stat-icon green">🚗</div><div><div class="stat-value">${s.totals.active_vehicles}</div><div class="stat-label">Vehicles</div></div></div>
+            <div class="stat-card"><div class="stat-icon amber">📊</div><div><div class="stat-value">${s.totals.predictions}</div><div class="stat-label">Predictions</div></div></div>
+            <div class="stat-card"><div class="stat-icon cyan">🗺️</div><div><div class="stat-value">${s.totals.trips}</div><div class="stat-label">Trips</div></div></div>
+            <div class="stat-card"><div class="stat-icon purple">🌍</div><div><div class="stat-value">${s.totals.community_reports}</div><div class="stat-label">Community Reports</div></div></div>
+            <div class="stat-card"><div class="stat-icon red">🎯</div><div><div class="stat-value">${s.avg_confidence ?? '—'}</div><div class="stat-label">Avg Confidence</div></div></div>`;
+
+        byVehicle.innerHTML = s.by_vehicle.length
+            ? `<table><thead><tr><th>Vehicle</th><th>Count</th><th>Avg Degradation</th></tr></thead><tbody>${s.by_vehicle.map(v => `<tr><td>${v.manufacturer} ${v.model_name}</td><td>${v.prediction_count}</td><td>${v.avg_degradation_pct ?? '—'}%</td></tr>`).join('')}</tbody></table>`
+            : '<p style="color:var(--text-muted);font-size:13px;">No predictions yet.</p>';
+
+        topUsers.innerHTML = s.top_users.length
+            ? `<table><thead><tr><th>User</th><th>Predictions</th></tr></thead><tbody>${s.top_users.map(u => `<tr><td>${u.username}</td><td>${u.prediction_count}</td></tr>`).join('')}</tbody></table>`
+            : '<p style="color:var(--text-muted);font-size:13px;">No data yet.</p>';
+    } catch (e) {
+        totals.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">${e.message}</p>`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadFleetDashboard);
+</script>
+{% endblock %}

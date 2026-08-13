@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Monthly Charging Cost — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}📅 Monthly Charging Cost{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        Estimated from the energy used in your simulated trips (Trip Simulator), at your
+        <a href="{{ url_for('cost.preferences_page') }}">saved electricity rates</a> — not a real utility bill.
+        For what you actually logged paying, see <a href="{{ url_for('cost.history_page') }}">Charging Cost History</a>.
+    </p>
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Estimated Spend Over Time</h3>
+            <div style="display:flex;gap:6px;">
+                <button class="btn btn-outline btn-sm period-btn" data-period="weekly" onclick="setPeriod('weekly')">Weekly</button>
+                <button class="btn btn-outline btn-sm period-btn" data-period="monthly" onclick="setPeriod('monthly')">Monthly</button>
+            </div>
+        </div>
+        <canvas id="monthlyCostChart" height="220"></canvas>
+        <div id="costTotals" style="font-size:12px;color:var(--text-muted);margin-top:10px;"></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let monthlyCostChart;
+let currentPeriod = 'monthly';
+
+function setPeriod(period) {
+    currentPeriod = period;
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === period));
+    loadMonthlyCost();
+}
+
+async function loadMonthlyCost() {
+    try {
+        const r = await apiFetch(`/cost/api/monthly?period=${currentPeriod}`);
+        const ctx = document.getElementById('monthlyCostChart');
+        if (monthlyCostChart) monthlyCostChart.destroy();
+        monthlyCostChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: r.series.map(s => s.label),
+                datasets: [
+                    { label: 'If home', data: r.series.map(s => s.estimated_cost_if_home_usd), backgroundColor: 'rgba(52,211,153,0.6)' },
+                    { label: 'If public fast', data: r.series.map(s => s.estimated_cost_if_public_usd), backgroundColor: 'rgba(248,113,113,0.6)' },
+                ],
+            },
+            options: { responsive: true, scales: { y: { beginAtZero: true } } },
+        });
+        document.getElementById('costTotals').textContent =
+            `Total estimated: $${r.total_estimated_cost_if_home_usd} at home (rate: ${r.rate_sources.home === 'user_saved' ? 'your saved rate' : 'default estimate'}) vs `
+            + `$${r.total_estimated_cost_if_public_usd} public fast charging (rate: ${r.rate_sources.public === 'user_saved' ? 'your saved rate' : 'default estimate'}) — ${r.total_energy_kwh} kWh logged.`;
+    } catch (e) { console.log('Monthly cost chart:', e.message); }
+}
+
+document.addEventListener('DOMContentLoaded', () => setPeriod('monthly'));
+</script>
+{% endblock %}

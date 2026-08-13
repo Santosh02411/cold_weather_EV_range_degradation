@@ -34,6 +34,12 @@ class ChargingReservation(db.Model):
     notes = db.Column(db.String(500), nullable=True)
 
     cancelled = db.Column(db.Boolean, default=False)
+    # Charging Reminder: set once a reminder email/notification has gone
+    # out for this reservation, so the scheduler tick doesn't re-send on
+    # every pass through its lead-time window. Nullable/unset for every
+    # reservation made before this feature existed -- those just won't
+    # get a (now-moot, since they're in the past) retroactive reminder.
+    reminder_sent_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User', backref='charging_reservations')

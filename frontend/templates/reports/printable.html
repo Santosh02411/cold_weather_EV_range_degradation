@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Printable Dashboard — EV Cold Weather Modeler</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <style>
+        body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1a1a1a; background: #fff; margin: 0; padding: 32px; }
+        h1 { font-size: 22px; margin-bottom: 4px; }
+        .subtitle { color: #666; font-size: 13px; margin-bottom: 24px; }
+        .section { margin-bottom: 28px; page-break-inside: avoid; }
+        .section h2 { font-size: 15px; border-bottom: 2px solid #1a73e8; padding-bottom: 6px; margin-bottom: 12px; }
+        .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .stat-box { border: 1px solid #ddd; border-radius: 8px; padding: 12px; text-align: center; }
+        .stat-box .value { font-size: 20px; font-weight: 700; color: #1a73e8; }
+        .stat-box .label { font-size: 11px; color: #666; margin-top: 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+        th { background: #f0f4ff; }
+        .print-toolbar { margin-bottom: 20px; }
+        .print-toolbar button { padding: 8px 16px; border-radius: 6px; border: none; background: #1a73e8; color: #fff; cursor: pointer; font-size: 13px; }
+        canvas { max-height: 240px; }
+
+        @media print {
+            .print-toolbar { display: none; }
+            body { padding: 0; }
+            .section { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-toolbar">
+        <button onclick="window.print()">🖨️ Print / Save as PDF</button>
+    </div>
+
+    <h1>Cold Weather EV Range Degradation — Dashboard Summary</h1>
+    <p class="subtitle">Generated {{ generated_at.strftime('%B %d, %Y at %H:%M UTC') }} for {{ current_user.full_name }}</p>
+
+    <div class="section">
+        <h2>Activity Summary</h2>
+        {% if user_stats %}
+        <div class="stat-grid">
+            <div class="stat-box"><div class="value">{{ user_stats.total_predictions }}</div><div class="label">Predictions</div></div>
+            <div class="stat-box"><div class="value">{{ user_stats.total_trips_simulated }}</div><div class="label">Trips Simulated</div></div>
+            <div class="stat-box"><div class="value">{{ user_stats.avg_degradation_pct if user_stats.avg_degradation_pct is not none else '—' }}%</div><div class="label">Avg Degradation</div></div>
+            <div class="stat-box"><div class="value">{{ user_stats.current_activity_streak_days }}</div><div class="label">Day Streak</div></div>
+        </div>
+        {% else %}
+        <p>No activity data available.</p>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <h2>Weather Impact Trend</h2>
+        <canvas id="weatherChart"></canvas>
+    </div>
+
+    <div class="section">
+        <h2>Energy Consumption Trend</h2>
+        <canvas id="energyChart"></canvas>
+    </div>
+
+    <div class="section">
+        <h2>Vehicles</h2>
+        <table>
+            <thead><tr><th>Manufacturer</th><th>Model</th><th>Battery (kWh)</th><th>EPA Range (km)</th><th>Charging Type</th></tr></thead>
+            <tbody>
+                {% for v in vehicles %}
+                <tr><td>{{ v.manufacturer }}</td><td>{{ v.model_name }}</td><td>{{ v.battery_capacity_kwh }}</td><td>{{ v.epa_range_km }}</td><td>{{ v.charging_type }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        async function loadCharts() {
+            try {
+                const weather = await fetch('/dashboard/api/analytics/weather-impact?period=monthly').then(r => r.json());
+                new Chart(document.getElementById('weatherChart'), {
+                    type: 'line',
+                    data: {
+                        labels: weather.series.map(s => s.label),
+                        datasets: [{ label: 'Avg Degradation (%)', data: weather.series.map(s => s.avg_degradation_pct), borderColor: '#f87171' }],
+                    },
+                });
+            } catch (e) { console.log('weather chart unavailable', e); }
+
+            try {
+                const energy = await fetch('/dashboard/api/analytics/energy?period=monthly').then(r => r.json());
+                new Chart(document.getElementById('energyChart'), {
+                    type: 'line',
+                    data: {
+                        labels: energy.series.map(s => s.label),
+                        datasets: [{ label: 'Avg Wh/km', data: energy.series.map(s => s.avg_energy_wh_km), borderColor: '#34d399' }],
+                    },
+                });
+            } catch (e) { console.log('energy chart unavailable', e); }
+        }
+        document.addEventListener('DOMContentLoaded', loadCharts);
+    </script>
+</body>
+</html>

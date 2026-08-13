@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Recent Activity — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🕒 Recent Activity{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div class="card">
+        <div class="card-header"><h3 class="card-title">Your Activity Feed</h3></div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+            A merged timeline of predictions, trip simulations, favorited vehicles, saved predictions, and
+            generated reports — most recent first.
+        </p>
+        <div id="activityFeed"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadActivity() {
+    const el = document.getElementById('activityFeed');
+    try {
+        const items = await apiFetch('/dashboard/api/activity?limit=50');
+        if (!items.length) {
+            el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Nothing here yet — activity shows up as soon as you run a prediction, simulate a trip, favorite a vehicle, or generate a report.</p>';
+            return;
+        }
+        el.innerHTML = items.map(i => `
+            <div style="display:flex;gap:12px;align-items:start;padding:10px 0;border-bottom:1px solid var(--border-color);">
+                <div style="font-size:20px;">${i.icon}</div>
+                <div style="flex:1;">
+                    <div style="font-size:14px;">${i.title}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${new Date(i.timestamp).toLocaleString()}</div>
+                </div>
+            </div>`).join('');
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', loadActivity);
+</script>
+{% endblock %}
