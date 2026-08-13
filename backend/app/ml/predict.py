@@ -1,4 +1,4 @@
-"""ML Prediction Engine (v2 - Phase 1)
+"""ML Prediction Engine (v2 - Phase 1, version-aware since Phase 4/ML-4)
 
 Two behavioural changes from v1:
   1. `physics_baseline_degradation` is computed for every request and fed
@@ -13,14 +13,27 @@ Two behavioural changes from v1:
      input - low agreement (e.g. a very unusual combination of extreme
      cold + high speed + mountainous terrain) now genuinely produces a
      lower confidence score.
+
+ML-4 change: models are now loaded from get_active_model_dir() (the
+versioned directory current_version.json points at), not the flat
+saved_models/ copy. This means train.set_active_version() -- an admin
+rolling back to an older trained version -- takes effect on the very
+next prediction, with no retraining and no file copying. The in-memory
+cache is keyed by (active_dir, model_name) specifically so a version
+switch can't accidentally keep serving a stale cached model from the
+previously-active version.
 """
 import os
 import joblib
 import numpy as np
 import pandas as pd
 
-from .train import FEATURE_COLS, get_models_root, train_all_models
+from .train import (
+    FEATURE_COLS, get_models_root, get_active_model_dir, train_all_models,
+    REQUIRED_MODEL_FILES, HAS_XGBOOST, HAS_LIGHTGBM, HAS_CATBOOST,
+)
 from .physics import physics_baseline_degradation_pct
+from . import feature_engineering as fe
 
 _loaded_models = {}
 
@@ -28,7 +41,33 @@ _loaded_models = {}
 # import the old name.
 get_models_dir = get_models_root
 
-ENSEMBLE_MODEL_NAMES = ['linear_regression', 'random_forest', 'gradient_boosting', 'xgboost']
+# Every BASE model (not the stacking ensemble -- see note below)
+# confidence is measured across. Optional families are only included
+# when their package is actually installed, same convention as the
+# original xgboost-only list.
+ENSEMBLE_MODEL_NAMES = ['linear_regression', 'random_forest', 'gradient_boosting', 'neural_network']
+if HAS_XGBOOST:
+    ENSEMBLE_MODEL_NAMES.append('xgboost')
+if HAS_LIGHTGBM:
+    ENSEMBLE_MODEL_NAMES.append('lightgbm')
+if HAS_CATBOOST:
+    ENSEMBLE_MODEL_NAMES.append('catboost')
+
+# The stacking ensemble is itself trained on these same base models'
+# style of predictions, so it's deliberately left OUT of
+# ENSEMBLE_MODEL_NAMES/confidence averaging (including it would be
+# circular -- it's not an independent opinion). It's still fully
+# selectable as `model_name` for an actual prediction.
+STACKING_ENSEMBLE_NAME = 'stacking_ensemble'
+
+ALL_SELECTABLE_MODEL_NAMES = ENSEMBLE_MODEL_NAMES + [STACKING_ENSEMBLE_NAME]
+
+
+def clear_model_cache():
+    """Call after train.set_active_version() (or a retrain) so the next
+    prediction re-reads from disk instead of serving a stale in-memory
+    model from whatever version was active before."""
+    _loaded_models.clear()
 
 
 def _encode_precipitation(val):
@@ -42,31 +81,58 @@ def _encode_terrain(val):
 
 
 def load_model(model_name):
-    if model_name in _loaded_models:
-        return _loaded_models[model_name]
+    models_dir = get_active_model_dir()
+    cache_key = (models_dir, model_name)
+    if cache_key in _loaded_models:
+        return _loaded_models[cache_key]
 
-    models_dir = get_models_root()
     path = os.path.join(models_dir, f'{model_name}.pkl')
 
     if not os.path.exists(path):
-        # Train models if not yet trained
-        train_all_models()
+        # Real bug found while testing ML-4 (see docs/PROJECT_WORKFLOW.md):
+        # this used to retrain unconditionally whenever the requested
+        # model's file was missing. get_prediction() always tries to
+        # load every ENSEMBLE_MODEL_NAMES entry including 'xgboost' -
+        # on any install where xgboost isn't installed (like the sandbox
+        # this project was built in), xgboost.pkl can NEVER exist, so
+        # every single prediction request was silently triggering a full
+        # retrain and writing a brand new version directory to disk.
+        # Only auto-train when NO models exist yet at all (a genuinely
+        # fresh install) - if this is just one optional model missing
+        # from an otherwise-trained version, report it as unavailable
+        # instead of retraining forever.
+        has_any_model = any(
+            os.path.exists(os.path.join(models_dir, f)) for f in REQUIRED_MODEL_FILES
+        )
+        if not has_any_model:
+            train_all_models()
+            models_dir = get_active_model_dir()
+            cache_key = (models_dir, model_name)
+            path = os.path.join(models_dir, f'{model_name}.pkl')
 
     if os.path.exists(path):
         model = joblib.load(path)
-        _loaded_models[model_name] = model
+        _loaded_models[cache_key] = model
         return model
     return None
 
 
+_DISPLAY_NAME_OVERRIDES = {
+    'xgboost': 'XGBoost',
+    'lightgbm': 'LightGBM',
+    'catboost': 'CatBoost',
+    'stacking_ensemble': 'Stacking Ensemble',
+}
+
+
 def get_available_models():
-    models_dir = get_models_root()
+    models_dir = get_active_model_dir()
     available = []
-    for name in ['linear_regression', 'random_forest', 'xgboost', 'gradient_boosting']:
+    for name in ALL_SELECTABLE_MODEL_NAMES:
         path = os.path.join(models_dir, f'{name}.pkl')
         available.append({
             'name': name,
-            'display_name': name.replace('_', ' ').title(),
+            'display_name': _DISPLAY_NAME_OVERRIDES.get(name, name.replace('_', ' ').title()),
             'available': os.path.exists(path),
         })
     return available
@@ -86,6 +152,13 @@ def _build_feature_row(features):
 
     temp = processed.get('temperature_c', 20)
     processed['physics_baseline_degradation'] = physics_baseline_degradation_pct(temp)
+
+    # Same wind-chill / HVAC-interaction / speed^2 / is-freezing
+    # features train.py's dataset generator computes -- MUST be the
+    # same function both places (see feature_engineering.py's
+    # docstring) or predictions would silently use a different feature
+    # set than the models were trained on.
+    processed = fe.engineer_feature_row(processed)
 
     # Built as a DataFrame with the exact training column names/order --
     # a raw numpy array here previously triggered a scikit-learn
@@ -119,23 +192,33 @@ def _ensemble_confidence(predictions):
 
 def get_prediction(features, model_name='random_forest'):
     """Get range degradation prediction, plus an ensemble-agreement
-    confidence score computed across every currently available model."""
+    confidence score computed across every currently available BASE
+    model (ENSEMBLE_MODEL_NAMES).
+
+    If `model_name` is the stacking ensemble, its own prediction is
+    used as the headline degradation figure, but confidence is still
+    measured across the independent base models only -- folding the
+    stacking ensemble's own output into that spread would be circular
+    (it's built FROM those models' predictions, so it doesn't count as
+    an independent second opinion about them).
+    """
     processed, X = _build_feature_row(features)
 
     model = load_model(model_name)
     if model is None:
         return _physics_prediction(features)
 
-    all_predictions = {}
+    ensemble_predictions = {}
     for name in ENSEMBLE_MODEL_NAMES:
         m = load_model(name)
         if m is None:
             continue
         try:
-            all_predictions[name] = float(m.predict(X)[0])
+            ensemble_predictions[name] = float(m.predict(X)[0])
         except Exception as e:
             print(f"[WARN] Ensemble member '{name}' failed to predict: {e}")
 
+    all_predictions = dict(ensemble_predictions)
     if model_name not in all_predictions:
         try:
             all_predictions[model_name] = float(model.predict(X)[0])
@@ -145,7 +228,12 @@ def get_prediction(features, model_name='random_forest'):
 
     degradation = all_predictions[model_name]
     degradation = max(0, min(65, degradation))
-    confidence = _ensemble_confidence(list(all_predictions.values()))
+    # Confidence is deliberately computed from ensemble_predictions
+    # (base models only), not all_predictions, so selecting the
+    # stacking ensemble as model_name doesn't fold its own derived
+    # output into its own confidence measurement.
+    confidence_source = ensemble_predictions if ensemble_predictions else all_predictions
+    confidence = _ensemble_confidence(list(confidence_source.values()))
 
     epa_range = features.get('epa_range_km', 400)
     battery_pct = features.get('battery_percentage', 100)
@@ -181,6 +269,7 @@ def get_prediction(features, model_name='random_forest'):
         'confidence_note': f"based on agreement across {len(all_predictions)} models",
         'model_used': model_name,
         'models_in_ensemble': list(all_predictions.keys()),
+        'individual_predictions': {k: round(v, 1) for k, v in all_predictions.items()},
         'physics_baseline_degradation_pct': round(processed['physics_baseline_degradation'], 1),
     }
 
@@ -216,5 +305,6 @@ def _physics_prediction(features):
         'confidence_note': 'physics-only fallback, no trained model available',
         'model_used': 'physics_fallback',
         'models_in_ensemble': [],
+        'individual_predictions': {},
         'physics_baseline_degradation_pct': round(deg, 1),
     }

@@ -5,7 +5,7 @@ from ..models.ev_vehicle import EVVehicle
 from ..ml.predict import get_prediction, get_available_models
 from ..ml.xai import get_shap_explanation
 from ..services.ai_features import generate_trip_briefing, answer_question, detect_anomaly, narrate_anomaly
-from .. import db
+from .. import db, limiter
 
 predictions_bp = Blueprint('predictions', __name__)
 
@@ -20,6 +20,7 @@ def index():
 
 @predictions_bp.route('/api/predict', methods=['POST'])
 @login_required
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_PREDICT', '30 per minute'))
 def predict():
     print(f"[DEBUG] Incoming prediction request from user {current_user.username}")
     data = request.get_json()
@@ -79,6 +80,15 @@ def predict():
         'explanation': explanation,
         'vehicle': vehicle.to_dict(),
         'anomaly': anomaly,
+        # UX-1/UX-3: expose what get_prediction() already computes but
+        # the Prediction DB model doesn't have columns for, rather than
+        # adding a migration for display-only fields.
+        'model_details': {
+            'confidence_note': result.get('confidence_note'),
+            'models_in_ensemble': result.get('models_in_ensemble', []),
+            'physics_baseline_degradation_pct': result.get('physics_baseline_degradation_pct'),
+            'individual_predictions': result.get('individual_predictions', {}),
+        },
     })
 
 
@@ -93,6 +103,7 @@ def _load_owned_prediction(prediction_id):
 
 @predictions_bp.route('/api/<int:prediction_id>/briefing', methods=['GET'])
 @login_required
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_AI', '15 per minute'))
 def briefing(prediction_id):
     """AI-1: natural-language trip briefing for a saved prediction,
     grounded in that prediction's own stored facts (never regenerated
@@ -110,8 +121,140 @@ def briefing(prediction_id):
     return jsonify({'briefing': text, 'source': source})
 
 
+@predictions_bp.route('/api/<int:prediction_id>/share', methods=['POST'])
+@login_required
+def create_share_link(prediction_id):
+    """Generate (or return the existing) public share token for a
+    prediction. Anyone with the resulting link can view a read-only
+    summary + AI briefing, no login required -- that's the whole point
+    of a "shareable link." Idempotent: calling this again on an
+    already-shared prediction returns the same token/URL rather than
+    invalidating the old one.
+    """
+    import secrets as _secrets
+    prediction = _load_owned_prediction(prediction_id)
+    if not prediction:
+        return jsonify({'error': 'Prediction not found'}), 404
+
+    if not prediction.share_token:
+        prediction.share_token = _secrets.token_urlsafe(32)
+        db.session.commit()
+
+    share_url = request.url_root.rstrip('/') + f'/predictions/share/{prediction.share_token}'
+    return jsonify({'share_token': prediction.share_token, 'share_url': share_url})
+
+
+@predictions_bp.route('/api/<int:prediction_id>/unshare', methods=['POST'])
+@login_required
+def revoke_share_link(prediction_id):
+    """Revoke a previously-created share link -- clears the token so
+    the old link stops working. A new "Share" click afterward generates
+    a brand new (different) token, not the same one."""
+    prediction = _load_owned_prediction(prediction_id)
+    if not prediction:
+        return jsonify({'error': 'Prediction not found'}), 404
+    prediction.share_token = None
+    db.session.commit()
+    return jsonify({'revoked': True})
+
+
+@predictions_bp.route('/share/<token>')
+def public_share_view(token):
+    """Public, read-only view of a shared prediction + AI briefing. NO
+    @login_required -- that's the point of a share link. Deliberately
+    read-only (no ask/anomaly/report-actual actions here) and doesn't
+    expose which user made the prediction, only the vehicle + conditions
+    + result, to avoid leaking account info through a link meant for
+    outside sharing.
+    """
+    prediction = Prediction.query.filter_by(share_token=token).first()
+    if not prediction:
+        return render_template('predictions/share_not_found.html'), 404
+
+    vehicle = EVVehicle.query.get(prediction.vehicle_id)
+    explanation = prediction.get_shap_explanation()
+    briefing_text, briefing_source = generate_trip_briefing(
+        current_app.config, prediction.to_dict(),
+        vehicle.to_dict() if vehicle else {}, explanation
+    )
+    return render_template(
+        'predictions/share_view.html',
+        prediction=prediction, vehicle=vehicle,
+        briefing=briefing_text, briefing_source=briefing_source,
+    )
+
+
+@predictions_bp.route('/api/<int:prediction_id>/briefing/pdf', methods=['GET'])
+@login_required
+def briefing_pdf(prediction_id):
+    """Export the prediction + AI briefing as a downloadable PDF, reusing
+    the same reportlab pattern as reports.py's existing PDF export."""
+    from flask import send_file
+    import io
+
+    prediction = _load_owned_prediction(prediction_id)
+    if not prediction:
+        return jsonify({'error': 'Prediction not found'}), 404
+
+    vehicle = EVVehicle.query.get(prediction.vehicle_id)
+    explanation = prediction.get_shap_explanation()
+    briefing_text, briefing_source = generate_trip_briefing(
+        current_app.config, prediction.to_dict(),
+        vehicle.to_dict() if vehicle else {}, explanation
+    )
+
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+    except ImportError:
+        return jsonify({'error': 'ReportLab not installed'}), 500
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    vname = f"{vehicle.manufacturer} {vehicle.model_name}" if vehicle else "Unknown vehicle"
+    elements.append(Paragraph("Cold Weather EV Trip Briefing", styles['Title']))
+    elements.append(Spacer(1, 8))
+    elements.append(Paragraph(f"{vname} &mdash; {prediction.created_at.strftime('%Y-%m-%d %H:%M') if prediction.created_at else ''}", styles['Normal']))
+    elements.append(Spacer(1, 16))
+
+    data = [
+        ['Temperature', f"{prediction.temperature_c}\u00b0C"],
+        ['Range Degradation', f"{prediction.range_degradation_pct}%"],
+        ['Predicted Range', f"{prediction.predicted_range_km} km"],
+        ['Energy Consumption', f"{prediction.energy_consumption_wh_km} Wh/km"],
+        ['Confidence', f"{prediction.prediction_confidence}"],
+    ]
+    table = Table(data, colWidths=[160, 300])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#1a2234')),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1, 20))
+
+    elements.append(Paragraph("AI Trip Briefing", styles['Heading2']))
+    elements.append(Spacer(1, 6))
+    elements.append(Paragraph(briefing_text.replace('\n', '<br/>'), styles['Normal']))
+    elements.append(Spacer(1, 6))
+    elements.append(Paragraph(f"<i>Source: {briefing_source}</i>", styles['Normal']))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return send_file(buffer, mimetype='application/pdf', as_attachment=True,
+                      download_name=f'trip_briefing_{prediction_id}.pdf')
+
+
 @predictions_bp.route('/api/<int:prediction_id>/ask', methods=['POST'])
 @login_required
+@limiter.limit(lambda: current_app.config.get('RATELIMIT_AI', '15 per minute'))
 def ask(prediction_id):
     """AI-2: answer a free-form question about a saved prediction,
     grounded in that prediction's own facts only."""
@@ -144,6 +287,47 @@ def anomaly_check(prediction_id):
     explanation = prediction.get_shap_explanation()
     note, source = narrate_anomaly(current_app.config, anomaly, prediction.to_dict(), explanation)
     return jsonify({'anomaly': anomaly, 'note': note, 'note_source': source})
+
+
+@predictions_bp.route('/api/<int:prediction_id>/report-actual', methods=['POST'])
+@login_required
+def report_actual(prediction_id):
+    """FEAT-6: record what the range actually turned out to be, after
+    the driver really drove in these conditions. This is what lets the
+    model be checked (and eventually retrained -- see
+    services/recalibration.py) against real outcomes, not just its own
+    synthetic test split or the Phase 1 published-study benchmarks.
+    """
+    from datetime import datetime
+    prediction = _load_owned_prediction(prediction_id)
+    if not prediction:
+        return jsonify({'error': 'Prediction not found'}), 404
+
+    data = request.get_json() or {}
+    actual_range_km = data.get('actual_range_km')
+    if actual_range_km is None:
+        return jsonify({'error': 'actual_range_km is required'}), 400
+    try:
+        actual_range_km = float(actual_range_km)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'actual_range_km must be a number'}), 400
+    if actual_range_km < 0:
+        return jsonify({'error': 'actual_range_km cannot be negative'}), 400
+
+    prediction.actual_range_km = actual_range_km
+    prediction.actual_range_reported_at = datetime.utcnow()
+    db.session.commit()
+
+    error_pct = None
+    if prediction.predicted_range_km:
+        error_pct = round(abs(prediction.predicted_range_km - actual_range_km) / prediction.predicted_range_km * 100, 1)
+
+    return jsonify({
+        'prediction': prediction.to_dict(),
+        'predicted_range_km': prediction.predicted_range_km,
+        'actual_range_km': actual_range_km,
+        'error_pct': error_pct,
+    })
 
 
 @predictions_bp.route('/api/history')

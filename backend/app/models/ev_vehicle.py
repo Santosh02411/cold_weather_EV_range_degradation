@@ -1,6 +1,13 @@
 from datetime import datetime
 from .. import db
 
+# DC fast charging is generally defined (SAE/industry usage) as
+# significantly higher power than typical AC Level 2 home charging
+# (usually capped around 11-19kW). 50kW is the commonly used floor for
+# what counts as a "fast" (DC) charger in most EV buying guides -- used
+# here as a real, named threshold rather than an arbitrary cutoff.
+FAST_CHARGING_THRESHOLD_KW = 50
+
 class EVVehicle(db.Model):
     __tablename__ = 'ev_vehicles'
 
@@ -17,6 +24,12 @@ class EVVehicle(db.Model):
     year = db.Column(db.Integer, nullable=True)
     energy_consumption_wh_km = db.Column(db.Float, nullable=True)
     is_active = db.Column(db.Boolean, default=True)
+
+    # New: search/filter/display fields
+    price_usd = db.Column(db.Float, nullable=True)  # approximate MSRP; null where not verified (see seed_data.py)
+    vehicle_type = db.Column(db.String(30), nullable=True, index=True)  # sedan, suv, hatchback, truck, crossover
+    image_path = db.Column(db.String(255), nullable=True)  # relative path under static/, same upload pattern as profile pictures
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -37,6 +50,13 @@ class EVVehicle(db.Model):
                 return 'Below Average'
         return 'Unknown'
 
+    @property
+    def supports_fast_charging(self):
+        """Derived from max_charging_power_kw rather than a separate
+        stored column, so it can never drift out of sync with the
+        actual charging spec (see FAST_CHARGING_THRESHOLD_KW above)."""
+        return bool(self.max_charging_power_kw and self.max_charging_power_kw >= FAST_CHARGING_THRESHOLD_KW)
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -52,6 +72,10 @@ class EVVehicle(db.Model):
             'year': self.year,
             'energy_consumption_wh_km': self.energy_consumption_wh_km,
             'efficiency_rating': self.efficiency_rating,
+            'supports_fast_charging': self.supports_fast_charging,
+            'price_usd': self.price_usd,
+            'vehicle_type': self.vehicle_type,
+            'image_path': self.image_path,
             'is_active': self.is_active,
         }
 

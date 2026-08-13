@@ -3,8 +3,8 @@ from flask_login import login_required, current_user
 from ..models.prediction import TripSimulation
 from ..models.ev_vehicle import EVVehicle
 from ..ml.predict import get_prediction
-from ..services.geo import geocode_place, get_route, get_elevation_profile, classify_terrain_from_elevations
-from .weather import fetch_openweathermap, get_demo_weather
+from ..services.geo import geocode_place, get_route, get_elevation_profile, classify_terrain_from_elevations, select_route_waypoints
+from .weather import fetch_openweathermap, fetch_openweathermap_by_coords, get_demo_weather
 from .. import db
 
 trip_bp = Blueprint('trip', __name__)
@@ -110,7 +110,7 @@ def route_predict():
     if dest_lat is None:
         return jsonify({'error': f"Could not geocode destination '{dest_name}'"}), 502
 
-    route = get_route(origin_lat, origin_lon, dest_lat, dest_lon)
+    route = get_route(origin_lat, origin_lon, dest_lat, dest_lon, provider_config=current_app.config)
     if route is None:
         return jsonify({'error': 'Could not fetch a driving route between these locations'}), 502
 
@@ -136,24 +136,49 @@ def route_predict():
             return w
         return get_demo_weather(place_name)
 
-    # RT-5 (Phase 3): sample weather at BOTH ends of the route instead of
-    # only the origin. A real "segment-by-segment" weather model would
-    # sample at each significant waypoint, but that means one weather API
-    # call per waypoint - a real cost/rate-limit tradeoff for the free
-    # OpenWeatherMap tier this app defaults to. Two-point sampling is a
-    # middle ground: real for both ends of any route, not just one, at a
-    # fixed cost regardless of route length. Full multi-waypoint sampling
-    # is tracked as ticket RT-6 (see FEATURE_TICKET_LIST.md) for whenever
-    # that cost tradeoff is worth revisiting.
-    origin_weather = _fetch_weather_for(origin_name)
-    dest_weather = _fetch_weather_for(dest_name)
+    def _fetch_weather_at(lat, lon, label):
+        if api_key and api_key != 'demo':
+            w, err = fetch_openweathermap_by_coords(lat, lon, api_key)
+            if err:
+                return get_demo_weather(label)
+            return w
+        return get_demo_weather(label)
 
-    # Use whichever end is colder for the prediction: colder conditions
-    # are the binding constraint on range for a cold-weather-focused tool
-    # (arriving with less charge than the optimistic estimate is a worse
-    # failure mode for the driver than the reverse), so this is a
-    # deliberate worst-case choice, not an average.
-    weather = origin_weather if origin_weather['temperature_c'] <= dest_weather['temperature_c'] else dest_weather
+    # RT-6: full multi-waypoint sampling, OFF by default (see config.py's
+    # WEATHER_MULTI_WAYPOINT_ENABLED docstring for the real cost tradeoff
+    # against the free OpenWeatherMap tier). When enabled, replaces the
+    # RT-5 2-point (origin+destination) sampling with N evenly-spaced
+    # points along the route's real path.
+    multi_waypoint_enabled = current_app.config.get('WEATHER_MULTI_WAYPOINT_ENABLED', False)
+    weather_samples = []
+
+    if multi_waypoint_enabled and route.get('coordinates'):
+        interval_km = current_app.config.get('WEATHER_WAYPOINT_INTERVAL_KM', 150)
+        max_waypoints = current_app.config.get('WEATHER_MAX_WAYPOINTS', 6)
+        waypoints = select_route_waypoints(route['coordinates'], interval_km, max_waypoints)
+        for i, (lat, lon) in enumerate(waypoints):
+            label = origin_name if i == 0 else (dest_name if i == len(waypoints) - 1 else f"waypoint {i}")
+            w = _fetch_weather_at(lat, lon, label)
+            weather_samples.append({'label': label, 'lat': lat, 'lon': lon,
+                                     'temperature_c': w['temperature_c'], 'data_source': w.get('data_source', 'unknown')})
+        # Same worst-case (coldest) selection principle as the 2-point
+        # version below -- just across however many points were sampled.
+        coldest = min(weather_samples, key=lambda s: s['temperature_c'])
+        weather = _fetch_weather_at(coldest['lat'], coldest['lon'], coldest['label'])
+    else:
+        # RT-5 (Phase 3): sample weather at BOTH ends of the route. Full
+        # multi-waypoint sampling (RT-6, above) is available but opt-in.
+        origin_weather = _fetch_weather_for(origin_name)
+        dest_weather = _fetch_weather_for(dest_name)
+        weather_samples = [
+            {'label': origin_name, 'temperature_c': origin_weather['temperature_c'], 'data_source': origin_weather.get('data_source', 'unknown')},
+            {'label': dest_name, 'temperature_c': dest_weather['temperature_c'], 'data_source': dest_weather.get('data_source', 'unknown')},
+        ]
+        # Use whichever end is colder for the prediction: colder
+        # conditions are the binding constraint on range for a cold-
+        # weather-focused tool (arriving with less charge than the
+        # optimistic estimate is a worse failure mode than the reverse).
+        weather = origin_weather if origin_weather['temperature_c'] <= dest_weather['temperature_c'] else dest_weather
 
     battery_pct = float(data.get('battery_percentage', 100))
     heater_usage = bool(data.get('heater_usage', True))
@@ -216,16 +241,9 @@ def route_predict():
         'weather': {
             'temperature_c': weather['temperature_c'],
             'data_source': weather.get('data_source', 'unknown'),
-            'used_for_prediction': 'origin' if weather is origin_weather else 'destination',
-            'note': 'worst-case (colder) of the two sampled points was used for the prediction',
-            'origin_sample': {
-                'temperature_c': origin_weather['temperature_c'],
-                'data_source': origin_weather.get('data_source', 'unknown'),
-            },
-            'destination_sample': {
-                'temperature_c': dest_weather['temperature_c'],
-                'data_source': dest_weather.get('data_source', 'unknown'),
-            },
+            'sampling_mode': 'multi_waypoint' if multi_waypoint_enabled else 'two_point',
+            'note': 'coldest of the sampled points was used for the prediction (worst-case, not average)',
+            'samples': weather_samples,
         },
     })
 
