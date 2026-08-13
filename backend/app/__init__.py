@@ -133,7 +133,7 @@ def create_app(config_name=None):
     # still works with zero migration commands; it just isn't how you
     # evolve a database that already has real data in it.
     with app.app_context():
-        from .models import user, ev_vehicle, prediction, dataset, battery_health, alert_subscription, session as user_session_model, vehicle_interactions, trip_plan
+        from .models import user, ev_vehicle, prediction, dataset, battery_health, alert_subscription, session as user_session_model, vehicle_interactions, trip_plan, charging_reservation
         db.create_all()
 
     # Real session revocation: check the current request's session

@@ -8,8 +8,17 @@ already both depend on the same direction).
 """
 
 
-def predict_charging_time(vehicle, temperature_c, current_pct, target_pct, fast_charging=True):
-    """Predict charging time using a capacity-dependent linear model as requested"""
+def predict_charging_time(vehicle, temperature_c, current_pct, target_pct, fast_charging=True, station_max_power_kw=None):
+    """Predict charging time using a capacity-dependent linear model as requested.
+
+    `station_max_power_kw`: optional cap (Charging Management phase) --
+    when charging at a SPECIFIC station rather than just modeling the
+    vehicle's own best case, the station's own max rated power can be
+    the binding constraint below the temperature-based estimate (e.g. a
+    50kW public DC charger capping a car that could otherwise pull
+    150kW in ideal conditions). None (the default) preserves the
+    original vehicle-only behavior every existing caller relies on.
+    """
     delta_pct = max(0, target_pct - current_pct)
     capacity = vehicle.battery_capacity_kwh
     energy_needed = capacity * (delta_pct / 100)
@@ -41,6 +50,9 @@ def predict_charging_time(vehicle, temperature_c, current_pct, target_pct, fast_
         else:
             base_power = 6.0
             efficiency = 1.0
+
+    if station_max_power_kw:
+        base_power = min(base_power, station_max_power_kw)
 
     # Linear time calculation: Time = Energy / Power
     charging_time_minutes = (energy_needed / base_power) * 60 if base_power > 0 else 0
