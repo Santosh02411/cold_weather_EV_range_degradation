@@ -1,10 +1,11 @@
-from flask import Blueprint, render_template, jsonify
+from flask import Blueprint, render_template, jsonify, request
 from flask_login import login_required, current_user
 from ..models.prediction import Prediction
 from ..models.ev_vehicle import EVVehicle
 from ..models.dataset import WeatherLog
 from .. import db
 from sqlalchemy import func
+from ..services import analytics as analytics_service
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -105,3 +106,96 @@ def seasonal_chart():
         result[k] = {'count': len(v['degradations']), 'avg_degradation': round(avg_deg, 1)}
 
     return jsonify(result)
+
+
+# ─────────────────────── Analytics Dashboard ───────────────────────
+# See services/analytics.py for the implementation. Kept on this same
+# blueprint (url_prefix /dashboard) since this is a fuller version of
+# the same "how am I doing" surface the plain dashboard home page
+# already starts -- not a separate concern needing its own blueprint.
+
+@dashboard_bp.route('/analytics')
+@login_required
+def analytics_page():
+    return render_template('dashboard/analytics.html')
+
+
+def _period_arg():
+    period = request.args.get('period', 'daily')
+    if period not in analytics_service.VALID_PERIODS:
+        return None
+    return period
+
+
+@dashboard_bp.route('/api/analytics/activity')
+@login_required
+def analytics_activity():
+    """Daily Analytics / Weekly Analytics / Monthly Analytics -- one
+    endpoint, `?period=daily|weekly|monthly` picks the granularity."""
+    period = _period_arg()
+    if period is None:
+        return jsonify({'error': "period must be 'daily', 'weekly', or 'monthly'"}), 400
+    return jsonify(analytics_service.activity_analytics(current_user.id, period))
+
+
+@dashboard_bp.route('/api/analytics/battery-health')
+@login_required
+def analytics_battery_health():
+    """Battery Health Trends across every vehicle the user has logged SOH for."""
+    return jsonify(analytics_service.battery_health_trends(current_user.id))
+
+
+@dashboard_bp.route('/api/analytics/weather-impact')
+@login_required
+def analytics_weather_impact():
+    """Weather Impact Trends: temperature vs. degradation over time,
+    plus temperature-bucket breakdown and overall correlation."""
+    period = _period_arg()
+    if period is None:
+        return jsonify({'error': "period must be 'daily', 'weekly', or 'monthly'"}), 400
+    return jsonify(analytics_service.weather_impact_trends(current_user.id, period))
+
+
+@dashboard_bp.route('/api/analytics/energy')
+@login_required
+def analytics_energy():
+    """Energy Consumption Trends: average predicted Wh/km over time."""
+    period = _period_arg()
+    if period is None:
+        return jsonify({'error': "period must be 'daily', 'weekly', or 'monthly'"}), 400
+    return jsonify(analytics_service.energy_consumption_trends(current_user.id, period))
+
+
+@dashboard_bp.route('/api/analytics/charging')
+@login_required
+def analytics_charging():
+    """Charging Statistics: reservations, cold-weather charging
+    slowdown, and estimated cost/energy from logged trips."""
+    return jsonify(analytics_service.charging_statistics(current_user.id))
+
+
+@dashboard_bp.route('/api/analytics/vehicle-ranking')
+@login_required
+def analytics_vehicle_ranking():
+    """Vehicle Ranking: fleet-wide, across popularity, favorites,
+    cold-weather resilience, and efficiency."""
+    limit = min(request.args.get('limit', 10, type=int), 25)
+    return jsonify(analytics_service.vehicle_ranking(limit=limit))
+
+
+@dashboard_bp.route('/api/analytics/cost')
+@login_required
+def analytics_cost():
+    """Cost Analytics: estimated charging spend over time, from real
+    logged trip energy."""
+    period = _period_arg()
+    if period is None:
+        return jsonify({'error': "period must be 'daily', 'weekly', or 'monthly'"}), 400
+    return jsonify(analytics_service.cost_analytics(current_user.id, period))
+
+
+@dashboard_bp.route('/api/analytics/user')
+@login_required
+def analytics_user():
+    """User Analytics: a personal activity profile."""
+    return jsonify(analytics_service.user_analytics(current_user.id))
