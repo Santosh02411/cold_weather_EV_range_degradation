@@ -133,3 +133,18 @@ See `docs/MEMORY.md` "Phase 8" for the reasoning behind each data-source and sco
 | COST-8 | Charging Cost History | ✅ Done — new `ChargingSession` model, a real logged ledger distinct from Monthly Charging Cost's projection, `/cost/history` |
 
 See `docs/MEMORY.md` "Phase 9" for the reasoning behind each data-source and scoping choice.
+
+## Phase 10 — Sustainability
+
+| ID | Title | Status |
+|---|---|---|
+| SUS-1 | "Sustainability" sidebar section | ✅ Done — 5 links added to `base.html` |
+| SUS-2 | CO₂ Savings Calculator | ✅ Done — new `services/emissions.py::compare_ev_vs_petrol_emissions()`, `/sustainability/` |
+| SUS-3 | Carbon Footprint Analysis | ✅ Done — time series from real logged trip energy, `/sustainability/footprint` |
+| SUS-4 | Fuel Savings | ✅ Done — physical liters-not-burned, deliberately separate from Cost Analysis's $ Savings Calculator, `/sustainability/fuel-savings` |
+| SUS-5 | Environmental Impact Dashboard | ✅ Done — all-time hub totals + tree-equivalence, `/sustainability/dashboard` |
+| SUS-6 | Green Driving Score | ✅ Done — 0-100 translation of existing `services/driving_style.py` analysis, `/sustainability/green-score` |
+
+Also this phase: `services/grid_intensity.py` (regional grid carbon intensity lookup, unified with Cost Analysis's electricity-rate regions), and two new nullable columns on `CostPreference` (`grid_intensity_g_co2_per_kwh`).
+
+See `docs/MEMORY.md` "Phase 10" for the reasoning behind each data-source and scoping choice, and the "Local dev environment fixes" section for the `scripts/reset_dev_db.py` / venv / email fixes delivered alongside this phase.

@@ -774,3 +774,107 @@ they're showing and link to the other. A session's cost can be left
 blank and auto-estimated from the user's saved rate (flagged
 `is_cost_estimated: true`) rather than forcing manual entry for every
 log, but a user-entered figure is never overwritten by an estimate.
+
+---
+
+## Phase 10 — Sustainability (sidebar hub)
+
+**Decision: CO2 Savings Calculator / Carbon Footprint Analysis / Fuel
+Savings / Environmental Impact Dashboard share one engine
+(`services/emissions.py`), mirroring Phase 9's `fuel_cost.py`
+pattern exactly.** Grid carbon intensity and petrol consumption/annual
+distance are resolved through the SAME `services/cost_preferences.py`
+resolver Cost Analysis uses, rather than a second copy of those
+numbers -- a user's comparison petrol car is one car across both
+feature areas, not two different assumed cars living in two different
+preference tables.
+
+**Decision: grid carbon intensity is a documented regional-average
+lookup table (`services/grid_intensity.py`), keyed by the SAME region
+keys as `services/electricity_rates.py`, and picking a region on the
+Electricity Price Integration page now sets both together.** Same
+honesty convention as electricity pricing: there's no live grid-carbon
+API wired in (real ones like electricityMaps/WattTime need a paid
+account this project doesn't have), so every figure is a labeled
+starting estimate, never presented as a live reading of the actual
+grid mix at that moment. Unifying the region picker avoids asking the
+user "which grid region are you in" twice for what is, physically, the
+same answer.
+
+**Decision: the petrol combustion emission factor
+(`PETROL_KG_CO2_PER_LITER = 2.31`) is treated differently from the
+grid-intensity/rate estimates -- it's a physical constant (burning a
+liter of gasoline releases a fixed mass of CO2 via combustion
+chemistry, not a regional average), so it isn't user-overridable the
+way grid intensity and electricity rates are.** Documented inline in
+`grid_intensity.py` as a combustion-chemistry-sourced figure, not
+grouped with the "estimate, confirm or override" language used for
+everything genuinely regional.
+
+**Decision: Fuel Savings (liters of petrol not burned) is kept
+separate from Cost Analysis's dollar-denominated Savings Calculator
+(Phase 9), even though both use the same underlying driving
+assumptions.** A physical-volume number and a dollar number answer
+different questions and shouldn't be collapsed into one page just
+because they share inputs -- same reasoning as Phase 9 keeping
+Charging Cost History separate from Monthly Charging Cost.
+
+**Decision: Green Driving Score is a 0-100 translation of the
+already-existing `services/driving_style.py::analyze_driving_style()`**
+(real recorded speeds from a user's own predictions/trip simulations),
+**not a new metric computed from different data.** `analyze_driving_style()`
+already classified eco/moderate/aggressive with a documented,
+threshold-based rationale; `green_driving_score()` adds a base score
+per style plus a consistency penalty (speed std-dev), reusing the
+exact same "insufficient_data" graceful fallback rather than inventing
+a second insufficient-data path. No live telemetry exists in this app
+(only what a user types into a prediction/trip form), and the
+score/UI say so.
+
+**Decision: Environmental Impact Dashboard's all-time totals are
+computed directly against `TripSimulation`, NOT by calling
+`footprint_analytics()` with an 'all' period.** `footprint_analytics()`
+only supports `daily`/`weekly`/`monthly` bucketing (inherited from
+`analytics.py`'s shared `_validate_period()`); a caught-before-ship bug
+in this phase tried passing `period='all'` through it, which would
+have raised `ValueError` on first real use. The all-time summary
+queries `TripSimulation` directly instead.
+
+---
+
+## Local dev environment fixes (schema drift / venv / email)
+
+**`scripts/reset_dev_db.py` added.** A local SQLite dev DB created by
+`db.create_all()` before a later phase added new columns will throw
+`sqlite3.OperationalError: no such column: ...` on almost any request
+that touches the affected table (since `users` gets touched by
+login/register/forgot-password, this can look like "the whole app is
+broken"). `create_all()` never alters an existing table, only creates
+missing ones -- there was no self-service fix for this beyond manually
+deleting the `.db` file or setting up Flask-Migrate from scratch. The
+new script drops and recreates every table (destructive, dev-only,
+requires typed confirmation unless `--yes` is passed) and is
+documented in the README's Database Migrations section as the fast
+path for a no-data-to-lose local dev database, with the proper
+Flask-Migrate path still documented as the right approach when real
+data needs to survive.
+
+**README gained a Virtual Environment step (new step 2 of Quick
+Start)** with copy-pasteable activation commands for PowerShell,
+cmd.exe, and bash, plus the PowerShell execution-policy fix most
+Windows users hit on first activation (`Set-ExecutionPolicy
+-ExecutionPolicy RemoteSigned -Scope CurrentUser`).
+
+**README's email section rewritten as a full step-by-step Gmail App
+Password walkthrough**, not just a one-line mention. The actual code
+path (`services/auth_email.py::_send_or_log()`) was already correct --
+it fails soft and logs `[EMAIL-WOULD-SEND] (MAIL_USERNAME/PASSWORD not
+configured) ...` rather than erroring when mail isn't configured, by
+design (same as `services/alerts.py`'s FEAT-3 pattern). "I never
+received the email" was, in the reported case, actually two separate
+issues stacking: (1) the schema-drift `OperationalError` above was
+crashing forgot-password before it ever reached the email-sending
+code at all, and (2) Gmail requires an App Password (2-Step
+Verification must be on first) -- a plain account password silently
+fails Gmail's SMTP auth. The README now calls out that these are
+separate problems and fixing one doesn't fix the other.

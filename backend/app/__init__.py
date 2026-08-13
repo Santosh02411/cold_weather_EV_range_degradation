@@ -112,6 +112,7 @@ def create_app(config_name=None):
     from .api.visualize import visualize_bp
     from .api.notifications import notifications_bp
     from .api.cost import cost_bp
+    from .api.sustainability import sustainability_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(vehicles_bp, url_prefix='/vehicles')
@@ -131,6 +132,7 @@ def create_app(config_name=None):
     app.register_blueprint(visualize_bp, url_prefix='/visualize')
     app.register_blueprint(notifications_bp, url_prefix='/notifications')
     app.register_blueprint(cost_bp, url_prefix='/cost')
+    app.register_blueprint(sustainability_bp, url_prefix='/sustainability')
 
     # Create tables. Coexists with Flask-Migrate (INFRA-1) deliberately:
     # create_all() is a convenience for a brand-new local dev DB (never

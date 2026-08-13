@@ -81,3 +81,55 @@ def analyze_driving_style(user_id, limit=100):
                 f"{'more' if multiplier > 1 else ('less' if multiplier < 1 else 'about the same')} "
                 "energy than the model's baseline estimate.",
     }
+
+
+# Green Driving Score: a 0-100 translation of analyze_driving_style()'s
+# real classification (average recorded speed + consistency across a
+# user's actual prediction/trip history) -- not a new metric computed
+# from different data, just a friendlier framing of the same analysis.
+# Consistency matters here too: a driver who's always steady at 60km/h
+# scores better than one who averages 60 but swings wildly between 30
+# and 100, since that swinginess itself burns extra energy (harsh
+# acceleration/braking) that a bare average speed doesn't capture.
+_STYLE_BASE_SCORE = {'eco': 90, 'moderate': 70, 'aggressive': 45}
+CONSISTENCY_PENALTY_PER_KMH_STDDEV = 1.5  # points off per km/h of speed std-dev, capped below
+MAX_CONSISTENCY_PENALTY = 25
+
+
+def green_driving_score(user_id, limit=100):
+    """Returns a 0-100 Green Driving Score plus the breakdown it came
+    from. Returns 'insufficient_data' gracefully (same as
+    analyze_driving_style()) rather than guessing off too few samples.
+    """
+    analysis = analyze_driving_style(user_id, limit=limit)
+    if analysis['status'] != 'ok':
+        return analysis
+
+    base = _STYLE_BASE_SCORE[analysis['driving_style']]
+    consistency_penalty = min(MAX_CONSISTENCY_PENALTY, round(analysis['speed_std_dev_kmh'] * CONSISTENCY_PENALTY_PER_KMH_STDDEV))
+    score = max(0, min(100, base - consistency_penalty))
+
+    if score >= 80:
+        grade = 'A'
+    elif score >= 65:
+        grade = 'B'
+    elif score >= 50:
+        grade = 'C'
+    else:
+        grade = 'D'
+
+    return {
+        'status': 'ok',
+        'score': score,
+        'grade': grade,
+        'driving_style': analysis['driving_style'],
+        'avg_speed_kmh': analysis['avg_speed_kmh'],
+        'speed_std_dev_kmh': analysis['speed_std_dev_kmh'],
+        'consistency_penalty': consistency_penalty,
+        'n_samples': analysis['n_samples'],
+        'note': (
+            f"Base score for '{analysis['driving_style']}' driving is {base}/100; "
+            f"{consistency_penalty} points deducted for speed consistency "
+            f"(±{analysis['speed_std_dev_kmh']} km/h across your recent trips/predictions)."
+        ),
+    }

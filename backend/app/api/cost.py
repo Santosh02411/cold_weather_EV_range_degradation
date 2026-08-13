@@ -8,6 +8,7 @@ from ..services import analytics as analytics_service
 from ..services.charging_cost import estimate_charging_cost
 from ..services.cost_preferences import get_or_create_preferences, get_effective_rates
 from ..services.electricity_rates import list_regional_rates, get_regional_rate
+from ..services.grid_intensity import get_regional_intensity
 from ..services.fuel_cost import compare_ev_vs_petrol, ownership_cost_analysis, savings_calculator
 
 cost_bp = Blueprint('cost', __name__)
@@ -126,10 +127,17 @@ def update_preferences():
         prefs.home_rate_usd_per_kwh = regional['home']
         prefs.public_rate_usd_per_kwh = regional['public_fast']
         prefs.rate_region_label = regional['label']
+        # Same region also sets the grid carbon intensity used by
+        # Sustainability (see services/grid_intensity.py) -- one region
+        # picker, two derived preferences that both describe "my grid".
+        intensity = get_regional_intensity(region_key)
+        if intensity:
+            prefs.grid_intensity_g_co2_per_kwh = intensity['intensity']
     else:
         numeric_fields = [
             'home_rate_usd_per_kwh', 'public_rate_usd_per_kwh',
             'petrol_price_per_liter', 'petrol_l_per_100km', 'annual_km',
+            'grid_intensity_g_co2_per_kwh',
         ]
         for field in numeric_fields:
             if field in data:

@@ -1,7 +1,7 @@
 {
-  "version": 1,
-  "version_dir": "v1_20260812T065138Z",
-  "trained_at_utc": "2026-08-12T06:51:38.643222+00:00",
+  "version": 4,
+  "version_dir": "v4_20260813T221116Z",
+  "trained_at_utc": "2026-08-13T22:11:16.657706+00:00",
   "n_samples": 8000,
   "feature_columns": [
     "temperature_c",
@@ -76,23 +76,23 @@
         "r2_score": 0.9736
       },
       "feature_importance": {
-        "temperature_c": 0.04001716956158823,
-        "humidity": 0.0018643232155636236,
-        "wind_speed_kmh": 0.04625018756882915,
-        "precipitation": 1.5744223228549836,
-        "battery_percentage": 0.0023497811048024154,
-        "vehicle_speed_kmh": 0.08912806016294182,
-        "hvac_usage": 5.337835358739727,
-        "terrain_type": 3.334830966805987,
-        "battery_age_years": 1.0105496005691752,
-        "battery_capacity_kwh": 0.009454558820734895,
-        "epa_range_km": 0.0009068271001087051,
-        "vehicle_weight_kg": 0.002525004934057081,
-        "physics_baseline_degradation": 0.8472865302332605,
-        "wind_chill_index": 0.04695469769691593,
-        "hvac_cold_interaction": 0.051022917087148276,
+        "temperature_c": 0.0400171695615911,
+        "humidity": 0.0018643232155619582,
+        "wind_speed_kmh": 0.04625018756882898,
+        "precipitation": 1.5744223228549914,
+        "battery_percentage": 0.0023497811048008794,
+        "vehicle_speed_kmh": 0.08912806016294081,
+        "hvac_usage": 5.337835358739729,
+        "terrain_type": 3.334830966805991,
+        "battery_age_years": 1.0105496005691805,
+        "battery_capacity_kwh": 0.009454558820733434,
+        "epa_range_km": 0.000906827100108497,
+        "vehicle_weight_kg": 0.0025250049340570413,
+        "physics_baseline_degradation": 0.8472865302332542,
+        "wind_chill_index": 0.04695469769691668,
+        "hvac_cold_interaction": 0.05102291708713973,
         "speed_squared_norm": 0.7533969501247803,
-        "is_freezing": 3.620457560601288
+        "is_freezing": 3.620457560601294
       },
       "hyperparameter_tuning": null
     },
@@ -104,32 +104,32 @@
       },
       "validation_set": {
         "mae": 2.0576,
-        "rmse": 2.7577,
+        "rmse": 2.7579,
         "r2_score": 0.9825
       },
       "held_out_test_set": {
-        "mae": 1.9273,
+        "mae": 1.9274,
         "rmse": 2.6174,
         "r2_score": 0.9841
       },
       "feature_importance": {
-        "temperature_c": 0.29929521634785317,
-        "humidity": 0.0013570544292816416,
-        "wind_speed_kmh": 0.003674719949234384,
-        "precipitation": 0.002240380668294028,
-        "battery_percentage": 0.0014490314004550464,
-        "vehicle_speed_kmh": 0.0030289958097767145,
-        "hvac_usage": 0.0019560662939761687,
-        "terrain_type": 0.013390603083746996,
-        "battery_age_years": 0.024230352495637673,
-        "battery_capacity_kwh": 0.0005859417440771643,
-        "epa_range_km": 0.0012864932174451922,
-        "vehicle_weight_kg": 0.0035201064534161886,
-        "physics_baseline_degradation": 0.6094403112139402,
-        "wind_chill_index": 0.009307999292490328,
-        "hvac_cold_interaction": 0.022299628671728685,
-        "speed_squared_norm": 0.0029264506581577502,
-        "is_freezing": 1.0648270488659349e-05
+        "temperature_c": 0.2992943416313623,
+        "humidity": 0.0013571250370213181,
+        "wind_speed_kmh": 0.003674462222550813,
+        "precipitation": 0.002240396977533662,
+        "battery_percentage": 0.0014489525017805935,
+        "vehicle_speed_kmh": 0.0030283037434529984,
+        "hvac_usage": 0.0019560678396216644,
+        "terrain_type": 0.013390612153334555,
+        "battery_age_years": 0.024230251780263615,
+        "battery_capacity_kwh": 0.0005860448451332174,
+        "epa_range_km": 0.0012864004719704938,
+        "vehicle_weight_kg": 0.0035201797494115263,
+        "physics_baseline_degradation": 0.609441660189458,
+        "wind_chill_index": 0.009308068064344607,
+        "hvac_cold_interaction": 0.022299425064747504,
+        "speed_squared_norm": 0.002927059457524626,
+        "is_freezing": 1.064827048865942e-05
       },
       "hyperparameter_tuning": null
     },
@@ -165,7 +165,7 @@
         "physics_baseline_degradation": 0.18485142072078503,
         "wind_chill_index": 0.07371600011267787,
         "hvac_cold_interaction": 0.02585073990687913,
-        "speed_squared_norm": 0.0028823045086618817,
+        "speed_squared_norm": 0.0028823045086618813,
         "is_freezing": 7.122241045914394e-07
       },
       "hyperparameter_tuning": null
@@ -192,37 +192,37 @@
     "xgboost": {
       "cross_validation": {
         "folds": 5,
-        "mae_mean": 1.7161,
-        "mae_std": 0.0448
+        "mae_mean": 1.717,
+        "mae_std": 0.0393
       },
       "validation_set": {
-        "mae": 1.7715,
-        "rmse": 2.3114,
-        "r2_score": 0.9877
+        "mae": 1.7713,
+        "rmse": 2.3246,
+        "r2_score": 0.9875
       },
       "held_out_test_set": {
-        "mae": 1.6983,
-        "rmse": 2.2305,
-        "r2_score": 0.9885
+        "mae": 1.6739,
+        "rmse": 2.2172,
+        "r2_score": 0.9886
       },
       "feature_importance": {
-        "temperature_c": 0.17055463790893555,
-        "humidity": 0.0001637481473153457,
-        "wind_speed_kmh": 0.0008409876027144492,
-        "precipitation": 0.002577002625912428,
-        "battery_percentage": 0.00015975478163454682,
-        "vehicle_speed_kmh": 0.0015493097016587853,
-        "hvac_usage": 0.005360464099794626,
-        "terrain_type": 0.008112016133964062,
-        "battery_age_years": 0.005226552486419678,
-        "battery_capacity_kwh": 0.00014614746032748371,
-        "epa_range_km": 0.00018252206791657954,
-        "vehicle_weight_kg": 0.0008990262867882848,
-        "physics_baseline_degradation": 0.7457913160324097,
-        "wind_chill_index": 0.0383901409804821,
-        "hvac_cold_interaction": 0.019615933299064636,
+        "temperature_c": 0.2107914537191391,
+        "humidity": 0.00022748523042537272,
+        "wind_speed_kmh": 0.0011618483113124967,
+        "precipitation": 0.0038227448239922523,
+        "battery_percentage": 0.0002659404999576509,
+        "vehicle_speed_kmh": 0.002227058634161949,
+        "hvac_usage": 0.008385688997805119,
+        "terrain_type": 0.010997999459505081,
+        "battery_age_years": 0.00803188793361187,
+        "battery_capacity_kwh": 0.00020701251924037933,
+        "epa_range_km": 0.0002931338094640523,
+        "vehicle_weight_kg": 0.0013686880702152848,
+        "physics_baseline_degradation": 0.6804147362709045,
+        "wind_chill_index": 0.043623168021440506,
+        "hvac_cold_interaction": 0.028181124478578568,
         "speed_squared_norm": 0.0,
-        "is_freezing": 0.00043042851029895246
+        "is_freezing": 0.0
       },
       "hyperparameter_tuning": null
     },
@@ -303,17 +303,17 @@
     "stacking_ensemble": {
       "cross_validation": {
         "folds": 5,
-        "mae_mean": 1.6847,
-        "mae_std": 0.0524
+        "mae_mean": 1.6871,
+        "mae_std": 0.0538
       },
       "validation_set": {
-        "mae": 1.7223,
-        "rmse": 2.2283,
+        "mae": 1.7245,
+        "rmse": 2.2236,
         "r2_score": 0.9886
       },
       "held_out_test_set": {
-        "mae": 1.6397,
-        "rmse": 2.122,
+        "mae": 1.6311,
+        "rmse": 2.1208,
         "r2_score": 0.9896
       },
       "feature_importance": {},
@@ -324,7 +324,7 @@
   "real_world_calibration": {
     "status": "ok",
     "num_benchmark_points": 13,
-    "mae_vs_real_world_benchmarks_pct": 10.95,
+    "mae_vs_real_world_benchmarks_pct": 11.04,
     "details": [
       {
         "source": "Geotab - EV Range Impact of Speed and Temperature",
@@ -355,40 +355,40 @@
         "temperature_c": 0.0,
         "condition": "average across 34 EV models, no explicit HVAC control",
         "real_world_degradation_pct": 22.0,
-        "model_ensemble_prediction_pct": 31.6,
-        "abs_error_pct": 9.6
+        "model_ensemble_prediction_pct": 31.8,
+        "abs_error_pct": 9.8
       },
       {
         "source": "Recurrent Auto - Winter & Cold Weather EV Range Study",
         "temperature_c": 0.0,
         "condition": "average, vehicles with heat pump",
         "real_world_degradation_pct": 17.0,
-        "model_ensemble_prediction_pct": 31.6,
-        "abs_error_pct": 14.6
+        "model_ensemble_prediction_pct": 31.8,
+        "abs_error_pct": 14.8
       },
       {
         "source": "Recurrent Auto - Winter & Cold Weather EV Range Study",
         "temperature_c": 0.0,
         "condition": "average, vehicles with resistive heater",
         "real_world_degradation_pct": 25.0,
-        "model_ensemble_prediction_pct": 31.6,
-        "abs_error_pct": 6.6
+        "model_ensemble_prediction_pct": 31.8,
+        "abs_error_pct": 6.8
       },
       {
         "source": "Recurrent Auto - Winter & Cold Weather EV Range Study",
         "temperature_c": 0.0,
         "condition": "best-performing model in freezing conditions",
         "real_world_degradation_pct": 12.0,
-        "model_ensemble_prediction_pct": 31.6,
-        "abs_error_pct": 19.6
+        "model_ensemble_prediction_pct": 31.8,
+        "abs_error_pct": 19.8
       },
       {
         "source": "Recurrent Auto - Winter & Cold Weather EV Range Study",
         "temperature_c": 0.0,
         "condition": "worst-performing model in freezing conditions",
         "real_world_degradation_pct": 31.0,
-        "model_ensemble_prediction_pct": 31.6,
-        "abs_error_pct": 0.6
+        "model_ensemble_prediction_pct": 31.8,
+        "abs_error_pct": 0.8
       },
       {
         "source": "AAA - Cold Weather EV Range Test",
@@ -419,8 +419,8 @@
         "temperature_c": -15.0,
         "condition": "average across tracked EVs",
         "real_world_degradation_pct": 46.0,
-        "model_ensemble_prediction_pct": 57.3,
-        "abs_error_pct": 11.3
+        "model_ensemble_prediction_pct": 57.4,
+        "abs_error_pct": 11.4
       },
       {
         "source": "Geotab - EV Range Impact of Speed and Temperature",
@@ -475,7 +475,7 @@
       },
       {
         "feature": "temperature_c",
-        "importance": 0.2993,
+        "importance": 0.29929,
         "importance_pct": 29.93
       },
       {

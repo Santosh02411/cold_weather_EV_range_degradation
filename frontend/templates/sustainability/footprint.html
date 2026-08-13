@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Carbon Footprint Analysis — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}📉 Carbon Footprint Analysis{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        From the energy used in your simulated trips (Trip Simulator), at your saved grid intensity —
+        vs. what the same driving would have emitted in a petrol car.
+    </p>
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Emissions Over Time</h3>
+            <div style="display:flex;gap:6px;">
+                <button class="btn btn-outline btn-sm period-btn" data-period="weekly" onclick="setPeriod('weekly')">Weekly</button>
+                <button class="btn btn-outline btn-sm period-btn" data-period="monthly" onclick="setPeriod('monthly')">Monthly</button>
+            </div>
+        </div>
+        <canvas id="footprintChart" height="220"></canvas>
+        <div id="footprintTotals" style="font-size:12px;color:var(--text-muted);margin-top:10px;"></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let footprintChart;
+let currentPeriod = 'monthly';
+
+function setPeriod(period) {
+    currentPeriod = period;
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === period));
+    loadFootprint();
+}
+
+async function loadFootprint() {
+    try {
+        const r = await apiFetch(`/sustainability/api/footprint?period=${currentPeriod}`);
+        const ctx = document.getElementById('footprintChart');
+        if (footprintChart) footprintChart.destroy();
+        footprintChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: r.series.map(s => s.label),
+                datasets: [
+                    { label: 'EV (actual)', data: r.series.map(s => s.ev_kg_co2), backgroundColor: 'rgba(52,211,153,0.6)' },
+                    { label: 'Petrol equivalent', data: r.series.map(s => s.petrol_equivalent_kg_co2), backgroundColor: 'rgba(248,113,113,0.6)' },
+                ],
+            },
+            options: { responsive: true, scales: { y: { beginAtZero: true, title: { display: true, text: 'kg CO₂' } } } },
+        });
+        document.getElementById('footprintTotals').textContent =
+            `Total: ${r.total_ev_kg_co2} kg CO₂ (EV) vs ${r.total_petrol_equivalent_kg_co2} kg CO₂ (petrol equivalent) — `
+            + `${r.total_kg_co2_saved} kg CO₂ saved. Grid intensity: ${r.grid_intensity_g_co2_per_kwh} gCO₂/kWh (${r.grid_intensity_source === 'user_saved' ? 'your saved value' : 'default estimate'}).`;
+    } catch (e) { console.log('Footprint chart:', e.message); }
+}
+
+document.addEventListener('DOMContentLoaded', () => setPeriod('monthly'));
+</script>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}CO₂ Savings Calculator — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🌱 CO₂ Savings Calculator{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        Grid carbon intensity is a documented regional average, not a live reading of your actual grid mix —
+        set your region or your own known figure in <a href="{{ url_for('cost.preferences_page') }}">Electricity Price Integration</a>
+        (the same preference page covers both cost and carbon settings).
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Calculate</h3></div>
+            <form id="co2Form">
+                <div class="form-group">
+                    <label class="form-label">EV</label>
+                    <select name="vehicle_id" class="form-control" required>
+                        <option value="">-- Choose Vehicle --</option>
+                        {% for v in vehicles %}
+                        <option value="{{ v.id }}">{{ v.manufacturer }} {{ v.model_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Petrol car (L/100km)</label>
+                        <input type="number" name="petrol_l_per_100km" class="form-control" step="0.1" min="0" placeholder="Uses your saved default">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Annual distance (km)</label>
+                        <input type="number" name="annual_km" class="form-control" step="100" min="0" placeholder="Uses your saved default">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Years</label>
+                    <input type="number" name="years" class="form-control" value="1" min="1" max="20">
+                </div>
+                <button type="submit" class="btn btn-primary">🌱 Calculate</button>
+            </form>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Result</h3></div>
+            <div id="co2Result"><p style="color:var(--text-muted);font-size:13px;">Choose a vehicle and calculate.</p></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('co2Form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const body = { vehicle_id: parseInt(form.get('vehicle_id')), years: parseInt(form.get('years')) };
+    ['petrol_l_per_100km', 'annual_km'].forEach(f => { if (form.get(f)) body[f] = parseFloat(form.get(f)); });
+
+    const el = document.getElementById('co2Result');
+    try {
+        const r = await apiFetch('/sustainability/api/co2-savings', { method: 'POST', body: JSON.stringify(body) });
+        el.innerHTML = `
+            <div class="stat-card" style="margin-bottom:14px;">
+                <div class="stat-icon green">🌱</div>
+                <div><div class="stat-value">${r.total_savings_kg_co2} kg</div><div class="stat-label">CO₂ Saved over ${r.years} year(s)</div></div>
+            </div>
+            <table><tbody>
+                <tr><td>EV emissions</td><td>${r.ev.g_co2_per_km} g/km</td></tr>
+                <tr><td>Petrol emissions</td><td>${r.petrol.g_co2_per_km} g/km</td></tr>
+                <tr><td>EV annual</td><td>${r.ev.annual_kg_co2} kg CO₂</td></tr>
+                <tr><td>Petrol annual</td><td>${r.petrol.annual_kg_co2} kg CO₂</td></tr>
+            </tbody></table>
+            <p style="font-size:11px;color:var(--text-muted);margin-top:10px;">
+                Grid intensity used: ${r.ev.grid_intensity_g_co2_per_kwh} gCO₂/kWh. EV efficiency: ${r.ev.wh_per_km} Wh/km
+                (${r.ev.wh_per_km_source === 'vehicle_logged' ? 'from vehicle data' : 'estimated from EPA range'}).
+            </p>`;
+    } catch (err) { el.innerHTML = `<p style="color:var(--accent-red);font-size:13px;">${err.message}</p>`; }
+});
+</script>
+{% endblock %}

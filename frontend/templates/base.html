@@ -152,6 +152,25 @@
                 </div>
 
                 <div class="nav-section">
+                    <div class="nav-section-title">🌱 Sustainability</div>
+                    <a href="{{ url_for('sustainability.index') }}" class="nav-link {% if request.endpoint == 'sustainability.index' %}active{% endif %}">
+                        <span class="nav-icon">🌱</span> CO₂ Savings Calculator
+                    </a>
+                    <a href="{{ url_for('sustainability.footprint_page') }}" class="nav-link {% if request.endpoint == 'sustainability.footprint_page' %}active{% endif %}">
+                        <span class="nav-icon">📉</span> Carbon Footprint Analysis
+                    </a>
+                    <a href="{{ url_for('sustainability.fuel_savings_page') }}" class="nav-link {% if request.endpoint == 'sustainability.fuel_savings_page' %}active{% endif %}">
+                        <span class="nav-icon">⛽</span> Fuel Savings
+                    </a>
+                    <a href="{{ url_for('sustainability.dashboard_page') }}" class="nav-link {% if request.endpoint == 'sustainability.dashboard_page' %}active{% endif %}">
+                        <span class="nav-icon">🌍</span> Environmental Impact Dashboard
+                    </a>
+                    <a href="{{ url_for('sustainability.green_score_page') }}" class="nav-link {% if request.endpoint == 'sustainability.green_score_page' %}active{% endif %}">
+                        <span class="nav-icon">🍃</span> Green Driving Score
+                    </a>
+                </div>
+
+                <div class="nav-section">
                     <div class="nav-section-title">Data</div>
                     <a href="{{ url_for('datasets.index') }}" class="nav-link {% if request.endpoint and 'datasets' in request.endpoint %}active{% endif %}">
                         <span class="nav-icon">📁</span> Datasets

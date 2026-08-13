@@ -36,6 +36,13 @@ class CostPreference(db.Model):
     public_rate_usd_per_kwh = db.Column(db.Float, nullable=True)
     rate_region_label = db.Column(db.String(100), nullable=True)  # e.g. "US National Average" -- which regional lookup row (if any) was used to prefill the above
 
+    # Sustainability: grid carbon intensity for this same region (see
+    # services/grid_intensity.py) -- kept on this same table, and set
+    # together with the rate fields above when a region is picked, so
+    # "which region am I using" has one answer across Cost Analysis
+    # and Sustainability rather than two separately-set preferences.
+    grid_intensity_g_co2_per_kwh = db.Column(db.Float, nullable=True)
+
     # EV vs Petrol Cost Comparison / Ownership / Savings defaults
     petrol_price_per_liter = db.Column(db.Float, nullable=True)  # null -> service-level documented default
     petrol_l_per_100km = db.Column(db.Float, nullable=True)      # null -> service-level documented default
@@ -50,6 +57,7 @@ class CostPreference(db.Model):
             'home_rate_usd_per_kwh': self.home_rate_usd_per_kwh,
             'public_rate_usd_per_kwh': self.public_rate_usd_per_kwh,
             'rate_region_label': self.rate_region_label,
+            'grid_intensity_g_co2_per_kwh': self.grid_intensity_g_co2_per_kwh,
             'petrol_price_per_liter': self.petrol_price_per_liter,
             'petrol_l_per_100km': self.petrol_l_per_100km,
             'annual_km': self.annual_km,

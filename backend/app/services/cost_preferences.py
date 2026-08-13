@@ -9,6 +9,7 @@ use" has one answer.
 from ..models.cost_preference import CostPreference
 from .charging_cost import DEFAULT_RATES_USD_PER_KWH
 from .fuel_cost import DEFAULT_PETROL_PRICE_USD_PER_LITER, DEFAULT_PETROL_L_PER_100KM, DEFAULT_ANNUAL_KM
+from .grid_intensity import DEFAULT_GRID_INTENSITY_G_CO2_PER_KWH
 from .. import db
 
 
@@ -35,6 +36,7 @@ def get_effective_rates(user_id):
     petrol_price, petrol_price_source = _resolve(prefs.petrol_price_per_liter, DEFAULT_PETROL_PRICE_USD_PER_LITER)
     petrol_consumption, petrol_consumption_source = _resolve(prefs.petrol_l_per_100km, DEFAULT_PETROL_L_PER_100KM)
     annual_km, annual_km_source = _resolve(prefs.annual_km, DEFAULT_ANNUAL_KM)
+    grid_intensity, grid_intensity_source = _resolve(prefs.grid_intensity_g_co2_per_kwh, DEFAULT_GRID_INTENSITY_G_CO2_PER_KWH)
 
     return {
         'home_rate_usd_per_kwh': home_rate, 'home_rate_source': home_source,
@@ -42,4 +44,5 @@ def get_effective_rates(user_id):
         'petrol_price_per_liter': petrol_price, 'petrol_price_source': petrol_price_source,
         'petrol_l_per_100km': petrol_consumption, 'petrol_l_per_100km_source': petrol_consumption_source,
         'annual_km': annual_km, 'annual_km_source': annual_km_source,
+        'grid_intensity_g_co2_per_kwh': grid_intensity, 'grid_intensity_source': grid_intensity_source,
     }
