@@ -21,53 +21,72 @@ gap is closed here, deliberately narrowly:
     same fail-soft-and-label-it pattern used for weather (Phase 2) and
     the ML physics fallback (Phase 1).
 
+Uses Google's Gemini API (generativelanguage.googleapis.com) rather than
+a paid provider, specifically so this feature works entirely on a free
+API key with no billing account required — a key from
+https://aistudio.google.com/apikey starts on the free tier automatically
+(see README "Getting a Gemini API key"). Default model is
+gemini-2.0-flash, a free-tier model as of this writing; override via
+GEMINI_MODEL if your account has access to a different free-tier model
+(e.g. a newer Flash release) you'd rather use instead.
+
 IMPORTANT — like Phase 2's geo.py, the actual API calls here were
-written against Anthropic's documented Messages API but could not be
-executed against the live internet in the sandbox this was built in (no
-outbound network access there). See docs/PROJECT_WORKFLOW.md for what
-was and wasn't verified. Test against a real API key before relying on
-this.
+written against Gemini's documented generateContent REST API but could
+not be executed against the live internet in the sandbox this was built
+in (no outbound network access there). See docs/PROJECT_WORKFLOW.md for
+what was and wasn't verified. Test against a real API key before relying
+on this.
 """
 import requests
 
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_API_VERSION = "2023-06-01"
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 def is_configured(app_config):
-    key = app_config.get('ANTHROPIC_API_KEY', '')
+    key = app_config.get('GEMINI_API_KEY', '')
     return bool(key)
 
 
-def call_claude(app_config, system_prompt, user_message, max_tokens=500, timeout=30):
-    """Low-level call to the Anthropic Messages API. Returns (text, error) —
-    exactly one of which is None. Never raises to the caller; every
-    failure mode (missing key, network error, unexpected response shape)
-    comes back as a plain string error so callers can fall back cleanly.
+def call_gemini(app_config, system_prompt, user_message, max_tokens=500, timeout=30):
+    """Low-level call to the Gemini generateContent API. Returns
+    (text, error) — exactly one of which is None. Never raises to the
+    caller; every failure mode (missing key, network error, blocked
+    response, unexpected response shape) comes back as a plain string
+    error so callers can fall back cleanly.
     """
-    api_key = app_config.get('ANTHROPIC_API_KEY', '')
+    api_key = app_config.get('GEMINI_API_KEY', '')
     if not api_key:
-        return None, 'ANTHROPIC_API_KEY not configured'
+        return None, 'GEMINI_API_KEY not configured'
 
-    model = app_config.get('ANTHROPIC_MODEL', 'claude-sonnet-5')
+    model = app_config.get('GEMINI_MODEL', 'gemini-2.0-flash')
+    url = f"{GEMINI_API_BASE}/{model}:generateContent"
     headers = {
-        'x-api-key': api_key,
-        'anthropic-version': ANTHROPIC_API_VERSION,
-        'content-type': 'application/json',
+        'x-goog-api-key': api_key,
+        'Content-Type': 'application/json',
     }
     payload = {
-        'model': model,
-        'max_tokens': max_tokens,
-        'system': system_prompt,
-        'messages': [{'role': 'user', 'content': user_message}],
+        'system_instruction': {'parts': [{'text': system_prompt}]},
+        'contents': [{'role': 'user', 'parts': [{'text': user_message}]}],
+        'generationConfig': {'maxOutputTokens': max_tokens},
     }
     try:
-        resp = requests.post(ANTHROPIC_API_URL, headers=headers, json=payload, timeout=timeout)
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
         resp.raise_for_status()
         data = resp.json()
-        text_blocks = [b['text'] for b in data.get('content', []) if b.get('type') == 'text']
-        text = '\n'.join(text_blocks).strip()
+
+        candidates = data.get('candidates') or []
+        if not candidates:
+            # Most commonly a safety block with no candidate returned at all.
+            feedback = data.get('promptFeedback', {}).get('blockReason')
+            return None, 'No response candidates from Gemini' + (f' (blocked: {feedback})' if feedback else '')
+
+        finish_reason = candidates[0].get('finishReason')
+        parts = candidates[0].get('content', {}).get('parts', [])
+        text = '\n'.join(p['text'] for p in parts if 'text' in p).strip()
+
         if not text:
+            if finish_reason and finish_reason not in ('STOP', 'MAX_TOKENS'):
+                return None, f'Gemini returned no text (finishReason: {finish_reason})'
             return None, 'Empty response from model'
         return text, None
     except requests.exceptions.HTTPError as e:
@@ -77,6 +96,6 @@ def call_claude(app_config, system_prompt, user_message, max_tokens=500, timeout
             detail = resp.json().get('error', {}).get('message', str(e))
         except Exception:
             detail = str(e)
-        return None, f'Anthropic API error: {detail}'
+        return None, f'Gemini API error: {detail}'
     except Exception as e:
         return None, f'LLM request failed: {e}'

@@ -84,7 +84,7 @@ project's approach to accuracy claims in general:
 
 ## 7. Phase 3 — LLM Endpoint Security
 
-- `ANTHROPIC_API_KEY` follows the same secrets pattern as the weather
+- `GEMINI_API_KEY` follows the same secrets pattern as the weather
   keys (§3): env var only, gitignored `.env`, never hardcoded.
 - **Prompt injection (basic awareness, not hardened):** `answer_question()`
   in `services/ai_features.py` passes the driver's free-form question
@@ -110,7 +110,7 @@ project's approach to accuracy claims in general:
 - **Cost/abuse:** there is currently no rate limiting on the `/ask`
   endpoint specifically (beyond the general absence of rate limiting
   noted in §5, ticket SEC-1) — a user could spam questions and run up
-  API costs against whichever `ANTHROPIC_API_KEY` is configured. Treat
+  API usage against whichever `GEMINI_API_KEY` is configured (free tier still has per-minute/per-day request caps, so this is a quota-exhaustion risk more than a billing risk). Treat
   this as part of ticket SEC-1's scope, not a separate gap.
 
 ## 8. Data Sensitivity

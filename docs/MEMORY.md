@@ -878,3 +878,35 @@ code at all, and (2) Gmail requires an App Password (2-Step
 Verification must be on first) -- a plain account password silently
 fails Gmail's SMTP auth. The README now calls out that these are
 separate problems and fixing one doesn't fix the other.
+
+---
+
+## LLM provider swap — Anthropic → Gemini (free tier)
+
+Phase 3's `services/llm.py` originally called Anthropic's Messages API.
+Switched to Google's Gemini `generateContent` REST API on request,
+specifically so the AI Trip Briefing / Q&A / anomaly-narration features
+(`services/ai_features.py`) work entirely on a free-tier key with no
+billing account required (`GEMINI_API_KEY` from
+https://aistudio.google.com/apikey, default model `gemini-2.0-flash`).
+
+**What changed:** `llm.py`'s request/response shape (Gemini's
+`system_instruction`/`contents` request fields and
+`candidates[0].content.parts[].text` response shape, replacing
+Anthropic's `system`/`messages`/`content` blocks; `call_gemini()`
+replacing `call_claude()`), `config.py`'s `GEMINI_API_KEY`/`GEMINI_MODEL`
+(replacing `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL`), `.env.example`, and
+every doc/README reference.
+
+**What didn't change:** `services/ai_features.py`'s public behavior,
+grounding rules, and template-fallback content are untouched -- only
+the one line in each function calling `llm.call_gemini()` instead of
+`llm.call_claude()`. `is_configured()` and the `(text, error)` return
+contract are identical, so this was a swap at the `llm.py` boundary
+only, not a rewrite of Phase 3's actual AI-feature logic.
+
+Same verification caveat as the original Anthropic integration: written
+against Gemini's documented API shape but not executed against the live
+internet in this sandbox (no outbound network here) -- test with a real
+`GEMINI_API_KEY` before relying on it. See `docs/PROJECT_WORKFLOW.md`
+"Later update" entry and `docs/TECHNICAL_ARCHITECTURE.md` §6.1 for more.

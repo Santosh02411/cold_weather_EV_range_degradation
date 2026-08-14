@@ -233,7 +233,7 @@ value to a public repo** — always go through `.env`, which git ignores.
 
 Other keys in `.env.example` (all optional):
 - `WEATHERAPI_KEY` — alternate weather provider, same signup pattern at https://www.weatherapi.com/signup.aspx
-- `ANTHROPIC_API_KEY` — powers Phase 3's AI trip briefings, Q&A, and anomaly narration (see below). Without it, these features fall back to template-generated text instead of failing.
+- `GEMINI_API_KEY` — powers Phase 3's AI trip briefings, Q&A, and anomaly narration (see below). Without it, these features fall back to template-generated text instead of failing. Free tier, no billing account required.
 - `SECRET_KEY` — set this to a long random string in any real/public deployment; the default in `config.py` is fine for local dev only
 
 ### Sending real emails (password reset, verification, cold-snap alerts, notifications)
@@ -282,19 +282,25 @@ the email-sending code — fix that first (see "Database Migrations"
 below); the email config above is unrelated to that error and won't
 fix it by itself.
 
-### Getting an Anthropic API key (for Phase 3's AI features)
+### Getting a Gemini API key (for Phase 3's AI features, free tier)
 
-1. Create an account at https://console.anthropic.com
-2. Go to **API Keys** in the console and create a new key
+1. Go to https://aistudio.google.com/apikey and sign in with any Google
+   account — no credit card or billing account needed.
+2. Click **Create API key**, then copy it.
 3. Add it to `.env`:
    ```
-   ANTHROPIC_API_KEY=sk-ant-your-real-key-here
+   GEMINI_API_KEY=your-real-key-here
    ```
-4. (Optional) `ANTHROPIC_MODEL` defaults to `claude-sonnet-5` — override it in `.env` if you want a different model. Full docs: https://docs.claude.com/en/api/overview
+4. (Optional) `GEMINI_MODEL` defaults to `gemini-2.0-flash`, a free-tier
+   model — override it in `.env` if you want a different one. Free-tier
+   Flash models have a per-minute and per-day request cap (check your
+   current limits on the quota page in AI Studio); this app's Phase 3
+   features are a handful of short calls per prediction, well within
+   normal usage for one person testing locally.
 
-This key is billed per API call by Anthropic (separate from any claude.ai
-subscription) — see https://docs.claude.com for current pricing before
-enabling this in a public deployment with real traffic.
+A new key from Google AI Studio starts on the free tier automatically —
+you don't need to opt into anything or attach a payment method to use
+it at this level. Full docs: https://ai.google.dev/gemini-api/docs
 
 ## 6️⃣ (Optional) Train the ML models explicitly
 
@@ -588,7 +594,7 @@ data isn't "AI" in the generative sense the branding implied. Phase 3
 closes that gap, deliberately narrowly:
 
 - **AI Trip Briefing** (`GET /predictions/api/<id>/briefing`) — a
-  natural-language summary of a saved prediction, written by Claude but
+  natural-language summary of a saved prediction, written by Gemini but
   grounded entirely in that prediction's own already-computed numbers.
   The model is explicitly instructed never to invent, adjust, or
   recompute a figure — only to phrase the given facts fluently.
@@ -602,11 +608,12 @@ closes that gap, deliberately narrowly:
   is only used afterward, optionally, to phrase an already-detected
   anomaly in plain language — it never decides what counts as anomalous.
 
-**No `ANTHROPIC_API_KEY` configured?** All three features still work —
+**No `GEMINI_API_KEY` configured?** All three features still work —
 they fall back to template-generated text built from the same
 underlying data, clearly labeled `"source": "template"` in the API
-response, rather than failing. See "Getting an Anthropic API key" above
-to enable the LLM-generated version.
+response, rather than failing. See "Getting a Gemini API key" above
+to enable the LLM-generated version — free tier, no billing account
+required.
 
 # 🔁 Real data feedback loop (Phase 4)
 

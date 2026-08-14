@@ -20,10 +20,13 @@ class Config:
     WEATHERAPI_KEY = os.environ.get('WEATHERAPI_KEY', 'demo')
 
     # Phase 3: LLM-grounded trip briefings / assistant (see services/llm.py).
-    # No key -> features fall back to template-based text, same
-    # fail-soft-and-say-so pattern as the weather demo fallback.
-    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
-    ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-5')
+    # Uses Google's free-tier Gemini API rather than a paid provider, so
+    # this works entirely on a no-billing-required key from
+    # https://aistudio.google.com/apikey. No key -> features fall back
+    # to template-based text, same fail-soft-and-say-so pattern as the
+    # weather demo fallback.
+    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+    GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
 
     # SEC-2: CORS is permissive ('*') by default for local dev, matching
     # the original project's behavior. Set CORS_ALLOWED_ORIGINS to a

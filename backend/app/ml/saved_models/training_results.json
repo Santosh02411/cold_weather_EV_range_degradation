@@ -1,7 +1,7 @@
 {
-  "version": 4,
-  "version_dir": "v4_20260813T221116Z",
-  "trained_at_utc": "2026-08-13T22:11:16.657706+00:00",
+  "version": 5,
+  "version_dir": "v5_20260814T054005Z",
+  "trained_at_utc": "2026-08-14T05:40:05.549395+00:00",
   "n_samples": 8000,
   "feature_columns": [
     "temperature_c",

@@ -53,10 +53,10 @@ concrete follow-up rather than silently accepted.
 
 ## Why `services/ai_features.py` and `services/llm.py` have no test file
 
-Both make real HTTP calls to Anthropic's API and, like `test_api_smoke.py`'s
+Both make real HTTP calls to Gemini's API and, like `test_api_smoke.py`'s
 dependency situation, weren't executed in the build sandbox (no network
 there either). Their template-fallback paths (what runs when no
-`ANTHROPIC_API_KEY` is set) WERE manually verified during Phase 3
+`GEMINI_API_KEY` is set) WERE manually verified during Phase 3
 development (see `docs/PROJECT_WORKFLOW.md`) but that verification was
 never converted into a permanent test file. A reasonable next step, not
 done here for time reasons.
