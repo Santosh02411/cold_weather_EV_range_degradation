@@ -16,7 +16,7 @@ services/electricity_rates.py for electricity.
 
 DEFAULT_PETROL_PRICE_USD_PER_LITER = 1.00     # roughly representative of recent US-ish averages; override via CostPreference
 DEFAULT_PETROL_L_PER_100KM = 8.5              # ~27.7 mpg -- typical mid-size sedan; override for a specific comparison car
-DEFAULT_ANNUAL_KM = 15000.0                   # a commonly-cited average annual driving distance
+DEFAULT_ANNUAL_KM = 15005.0                   # a commonly-cited average annual driving distance
 
 # Documented, generic estimates -- EVs are widely reported to have
 # meaningfully lower routine maintenance (no oil changes, fewer moving
