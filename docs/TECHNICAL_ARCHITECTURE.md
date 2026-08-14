@@ -39,16 +39,16 @@ a temperature → % degradation curve.
 **Why isotonic regression and not simple linear interpolation:**
 different studies measured under different methodologies disagree with
 each other at nearby temperatures (e.g. AAA's -7°C lab test with active
-heating reads *worse* than Recurrent's -10°C real-world fleet average).
+heating reads _worse_ than Recurrent's -10°C real-world fleet average).
 Connecting raw points with straight lines produces a curve where
-degradation briefly gets *better* as it gets colder — not physically
+degradation briefly gets _better_ as it gets colder — not physically
 meaningful. Isotonic regression finds the best-fitting curve that still
 only worsens as temperature drops, which is the right shape constraint
 for this relationship, and it reconciles disagreeing sources rather than
 literally connecting them point to point.
 
 **Why scope is capped at the ~21.5°C "sweet spot":** Geotab's data shows
-EVs modestly *exceed* rated range in mild weather and lose range again in
+EVs modestly _exceed_ rated range in mild weather and lose range again in
 heat, which is a real but separate phenomenon (heat degrades cooling
 systems and battery chemistry differently than cold does). This project
 is scoped to cold-weather degradation, so degradation is floored at 0%
@@ -66,7 +66,7 @@ comparable citation coverage.
 2. `physics_baseline_degradation` is included as an explicit **input
    feature** to every model — this is what makes it "physics-informed
    ML" rather than "ML with synthetic data": the models are trained to
-   *correct* a real-grounded starting point using the other conditions,
+   _correct_ a real-grounded starting point using the other conditions,
    not to learn the temperature relationship from nothing.
 3. Splits data 70/15/15 into train/validation/held-out test, and runs
    5-fold cross-validation on the training split. All three sets of
@@ -119,11 +119,11 @@ comparable citation coverage.
 ## 3. Model Versioning & Conflict Resolution Strategy
 
 - Each `python train.py` run creates a new `saved_models/v<N>_<UTC
-  timestamp>/` directory — never overwrites a previous version's
+timestamp>/` directory — never overwrites a previous version's
   directory.
 - `saved_models/current_version.json` is the single pointer to "what
   the app should currently be using" (`{"active_version": N,
-  "active_dir": "..."}`).
+"active_dir": "..."}`).
 - `predict.py` currently loads models from the flat `saved_models/*.pkl`
   layout (written alongside the versioned directory on every training
   run) rather than reading `current_version.json` directly. This is a
@@ -148,7 +148,7 @@ Unchanged from v1 for the web-app-facing tables (`User`, `EVVehicle`,
 `Prediction`, `TripSimulation`, `Dataset`) — see
 `backend/app/models/*.py` for the SQLAlchemy schema. Phase 1 did not
 change the persisted schema; `Prediction.prediction_confidence` now
-receives a *real* varying value instead of always `0.85`, and
+receives a _real_ varying value instead of always `0.85`, and
 `Prediction.shap_explanation` now reflects the physics-informed feature
 set.
 
@@ -159,11 +159,11 @@ the terrain dropdown (a guess) and single-point trip input (no real
 route). Three free, keyless providers, each chosen and scoped
 deliberately:
 
-| Provider | Used for | Real-world constraint |
-|---|---|---|
-| Nominatim (OpenStreetMap) | Geocoding place names → lat/lon | ~1 req/sec public rate limit; requires a descriptive `User-Agent` header (set in `_HEADERS`) |
-| OSRM public demo server | Driving route + geometry | Explicitly "light usage/evaluation" only — not for production traffic (ticket RT-4) |
-| Open-Elevation | Elevation profile along the route | Free but can be slow under load; route coordinates are sampled down to ≤25 points before lookup to keep each request small |
+| Provider                  | Used for                          | Real-world constraint                                                                                                      |
+| ------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Nominatim (OpenStreetMap) | Geocoding place names → lat/lon   | ~1 req/sec public rate limit; requires a descriptive `User-Agent` header (set in `_HEADERS`)                               |
+| OSRM public demo server   | Driving route + geometry          | Explicitly "light usage/evaluation" only — not for production traffic (ticket RT-4)                                        |
+| Open-Elevation            | Elevation profile along the route | Free but can be slow under load; route coordinates are sampled down to ≤25 points before lookup to keep each request small |
 
 **`classify_terrain_from_elevations()`** turns a raw elevation profile
 into the same `flat` / `hilly` / `mountainous` category the ML model
@@ -194,13 +194,14 @@ the ticket list rather than left implicit.
 against each provider's documented API but could not be executed
 against the live internet in the sandbox this was built in (no
 outbound network access there — see `PROJECT_WORKFLOW.md`). The
-terrain-classification *logic* itself (pure Python, no network) was
+terrain-classification _logic_ itself (pure Python, no network) was
 tested directly with synthetic elevation profiles. The network calls
 themselves need a real run-through before shipping.
 
 **RT-4 (Phase 4): routing provider is now configurable**, not hardcoded
 to OSRM's public demo server. `ROUTING_PROVIDER` (config.py) selects
 between:
+
 - `osrm` (default) + `OSRM_BASE_URL` — point at a self-hosted OSRM
   instance instead of the public demo server. Minimal self-hosting
   starting point (requires downloading a real OSM extract for your
@@ -213,8 +214,8 @@ between:
   docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-extract -p /opt/car.lua /data/us-northeast-latest.osm.pbf
   docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-partition /data/us-northeast-latest.osrm
   docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-customize /data/us-northeast-latest.osrm
-  docker run -t -i -p 5000:5000 -v "${PWD}:/data" osrm/osrm-backend osrm-routed --algorithm mld /data/us-northeast-latest.osrm
-  # then: OSRM_BASE_URL=http://localhost:5000
+  docker run -t -i -p 5005:5005 -v "${PWD}:/data" osrm/osrm-backend osrm-routed --algorithm mld /data/us-northeast-latest.osrm
+  # then: OSRM_BASE_URL=http://localhost:5005
   ```
 - `ors` + `ORS_API_KEY` — use OpenRouteService's free tier instead of
   OSRM entirely (sign up at https://openrouteservice.org/dev/#/signup).
@@ -333,12 +334,12 @@ cold-weather telemetry with the full feature set this project needs
   requires a request form / access grant and is CC BY-NC-SA (non-
   commercial), and doesn't isolate cold-weather degradation specifically.
 - **OpenEV Data** — real and directly downloadable (CDLA-Permissive-2.0,
-  no login), but it's vehicle *specifications* (battery capacity, rated
+  no login), but it's vehicle _specifications_ (battery capacity, rated
   range), not trip-level telemetry with weather/degradation outcomes.
   Used as a candidate source for real vehicle specs (see README), not
   for the degradation model itself.
 - **Geotab / Recurrent Auto / AAA / DOE** — real, aggregate, and freely
-  citable, but published as *summary statistics* (temperature vs. %
+  citable, but published as _summary statistics_ (temperature vs. %
   range retained), not row-level telemetry. This is what's actually
   used, via the isotonic calibration curve.
 - **Kaggle EV datasets** — several exist but require an account/login to

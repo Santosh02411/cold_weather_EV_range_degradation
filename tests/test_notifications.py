@@ -373,7 +373,7 @@ def test_maintenance_reminder_not_sent_without_baseline(app):
 
         prefs = NotificationPreference(user_id=user.id, maintenance_reminders_enabled=True)
         db.session.add(prefs)
-        db.session.add(BatteryHealthRecord(user_id=user.id, vehicle_id=vehicle_id, soh_pct=90, odometer_km=50000))
+        db.session.add(BatteryHealthRecord(user_id=user.id, vehicle_id=vehicle_id, soh_pct=90, odometer_km=50050))
         db.session.commit()
 
         results = check_and_send_maintenance_reminders(app)
@@ -392,7 +392,7 @@ def test_maintenance_reminder_not_sent_when_under_interval(app):
 
         prefs = NotificationPreference(
             user_id=user.id, maintenance_reminders_enabled=True,
-            maintenance_interval_km=10000, maintenance_last_service_odometer_km=5000,
+            maintenance_interval_km=10000, maintenance_last_service_odometer_km=5005,
         )
         db.session.add(prefs)
         db.session.add(BatteryHealthRecord(user_id=user.id, vehicle_id=vehicle_id, soh_pct=90, odometer_km=8000))

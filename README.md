@@ -232,6 +232,7 @@ fall back to randomized demo weather instead of real conditions. To get
 value to a public repo** — always go through `.env`, which git ignores.
 
 Other keys in `.env.example` (all optional):
+
 - `WEATHERAPI_KEY` — alternate weather provider, same signup pattern at https://www.weatherapi.com/signup.aspx
 - `GEMINI_API_KEY` — powers Phase 3's AI trip briefings, Q&A, and anomaly narration (see below). Without it, these features fall back to template-generated text instead of failing. Free tier, no billing account required.
 - `SECRET_KEY` — set this to a long random string in any real/public deployment; the default in `config.py` is fine for local dev only
@@ -275,9 +276,23 @@ actual SMTP error (`[ERROR] Failed to send email to <address>:
 typo'd address, an App Password copied with a missing character, or a
 network/firewall blocking outbound port 587.
 
+**Still stuck?** Run the diagnostic script instead of guessing:
+
+```bash
+cd backend
+python ../scripts/check_email_config.py                  # checks config + SMTP login
+python ../scripts/check_email_config.py you@example.com   # also sends a real test email
+```
+
+It shows exactly which config values Flask loaded, opens a real SMTP
+connection and reports the precise error if login fails (wrong
+password vs. blocked port are different failures with different
+fixes), and can send a real test email so you can confirm delivery
+without going through the app's UI at all.
+
 **If you're also seeing an `OperationalError: no such column` on
 login/register/forgot-password specifically** (not just missing
-emails), that error is crashing the request *before* it ever reaches
+emails), that error is crashing the request _before_ it ever reaches
 the email-sending code — fix that first (see "Database Migrations"
 below); the email config above is unrelated to that error and won't
 fix it by itself.
@@ -353,7 +368,7 @@ To switch from the default MySQL/SQLite setup to Postgres, set
 This means your local SQLite file (`backend/cold_weather_ev.db` by
 default) was created by `db.create_all()` before this project's models
 gained the column it's now complaining about — `create_all()` only
-creates missing *tables*, it never alters an *existing* table, so a
+creates missing _tables_, it never alters an _existing_ table, so a
 database created early on doesn't automatically pick up columns added
 by later changes. This shows up as `sqlite3.OperationalError: no such
 column: ...` on almost any page that touches that table (login,
@@ -378,7 +393,7 @@ resetting.
 Open in browser:
 
 ```bash
-http://127.0.0.1:5000
+http://127.0.0.1:5005
 ```
 
 ---
@@ -453,16 +468,16 @@ Beyond basic login/register, the app now has:
   To enable:
   1. Google: create OAuth credentials at
      https://console.cloud.google.com/apis/credentials — authorized
-     redirect URI: `http://localhost:5000/oauth/google/callback`
+     redirect URI: `http://localhost:5005/oauth/google/callback`
      (adjust host/port for your deployment)
   2. GitHub: create an OAuth App at
      https://github.com/settings/developers — callback URL:
-     `http://localhost:5000/oauth/github/callback`
+     `http://localhost:5005/oauth/github/callback`
   3. Set the client ID/secret pairs in `.env` — the sign-in buttons only
      appear once configured, no code changes needed.
-  Signing in with a provider whose email matches an existing account
-  links that provider to the existing account rather than creating a
-  duplicate.
+     Signing in with a provider whose email matches an existing account
+     links that provider to the existing account rather than creating a
+     duplicate.
 - **Session & device management** (`/sessions`) — see every device
   currently signed into your account and revoke any of them
   individually; revoking takes effect on that device's very next
@@ -523,16 +538,16 @@ Row-level EV telemetry that simultaneously links temperature, HVAC use,
 terrain, speed, and measured range loss for individual trips is **not**
 available as a free, bulk-downloadable public dataset — this was checked
 during Phase 1 (see `docs/TECHNICAL_ARCHITECTURE.md` for what was tried).
-What *is* publicly available and genuinely real is a set of published,
+What _is_ publicly available and genuinely real is a set of published,
 citable field studies that report the aggregate relationship between
 temperature and range retention. This project uses those directly:
 
-| Source | What it published | Link |
-|---|---|---|
-| Geotab | Temperature vs. range curve from 5.2M real EV trips across 4,200 vehicles | https://www.geotab.com/blog/ev-range/ |
-| Recurrent Auto | Winter range retention across 30,000+ real EVs, 34 models | https://www.recurrentauto.com/research/winter-ev-range-loss |
-| AAA | Controlled cold-weather range test (with/without cabin heating) | AAA "Cold Weather EV Range Test" |
-| U.S. DOE | Impact of Cold Ambient Temperature on BEV Performance (Sept 2024) | https://www.energy.gov/sites/default/files/2024-10/Impact_of_Cold_Ambient_Temperature_on_BEV_Performance_v15_TechEditFinal_12Sep2024__0.pdf |
+| Source         | What it published                                                         | Link                                                                                                                                        |
+| -------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Geotab         | Temperature vs. range curve from 5.2M real EV trips across 4,200 vehicles | https://www.geotab.com/blog/ev-range/                                                                                                       |
+| Recurrent Auto | Winter range retention across 30,000+ real EVs, 34 models                 | https://www.recurrentauto.com/research/winter-ev-range-loss                                                                                 |
+| AAA            | Controlled cold-weather range test (with/without cabin heating)           | AAA "Cold Weather EV Range Test"                                                                                                            |
+| U.S. DOE       | Impact of Cold Ambient Temperature on BEV Performance (Sept 2024)         | https://www.energy.gov/sites/default/files/2024-10/Impact_of_Cold_Ambient_Temperature_on_BEV_Performance_v15_TechEditFinal_12Sep2024__0.pdf |
 
 These are compiled, with citations, in
 [`data/real_world_calibration/temperature_range_benchmarks.csv`](./data/real_world_calibration/temperature_range_benchmarks.csv).
@@ -627,7 +642,7 @@ required.
   once at least 10 real outcomes exist, an admin can retrain blending
   real data (oversampled 5x) into the synthetic training set, producing
   a new model version. This is the actual mechanism that makes the
-  model *more accurate over time*, not just better-labeled — see
+  model _more accurate over time_, not just better-labeled — see
   `docs/TECHNICAL_ARCHITECTURE.md` §5/6 for why this matters (there's no
   free public row-level dataset for this domain; this is how one gets
   built).
