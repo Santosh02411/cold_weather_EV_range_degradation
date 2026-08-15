@@ -72,7 +72,7 @@ def build_model_registry(include_ensemble=True):
             'param_distributions': None,
         },
         'random_forest': {
-            'estimator': RandomForestRegressor(n_estimators=200, max_depth=15, random_state=42, n_jobs=-1),
+            'estimator': RandomForestRegressor(n_estimators=200, max_depth=15, random_state=42, n_jobs=1),
             'param_distributions': {
                 'n_estimators': [100, 200, 300],
                 'max_depth': [8, 12, 15, 20, None],
@@ -126,7 +126,7 @@ def build_model_registry(include_ensemble=True):
 
     if include_ensemble:
         base_estimators = [
-            ('rf', RandomForestRegressor(n_estimators=150, max_depth=12, random_state=42, n_jobs=-1)),
+            ('rf', RandomForestRegressor(n_estimators=150, max_depth=12, random_state=42, n_jobs=1)),
             ('gb', GradientBoostingRegressor(n_estimators=100, max_depth=5, random_state=42)),
         ]
         if HAS_XGBOOST:
@@ -146,7 +146,7 @@ def build_model_registry(include_ensemble=True):
         # an interactive admin "retrain now" click instead of tying up
         # the request for several minutes.
         registry['stacking_ensemble'] = {
-            'estimator': StackingRegressor(estimators=base_estimators, final_estimator=Ridge(alpha=1.0), cv=3, n_jobs=-1),
+            'estimator': StackingRegressor(estimators=base_estimators, final_estimator=Ridge(alpha=1.0), cv=3, n_jobs=1),
             'param_distributions': None,
         }
 
@@ -166,7 +166,7 @@ def tune_hyperparameters(estimator, param_distributions, X_train, y_train, n_ite
     search = RandomizedSearchCV(
         estimator, param_distributions, n_iter=n_iter, cv=kf,
         scoring='neg_mean_absolute_error', random_state=random_state,
-        n_jobs=1,  # n_jobs=-1 here would nest under train.py's own parallel model loop
+        n_jobs=1,  # n_jobs=1 here would nest under train.py's own parallel model loop
     )
     search.fit(X_train, y_train)
     return search.best_estimator_, search.best_params_, float(-search.best_score_)
