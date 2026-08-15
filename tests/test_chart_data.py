@@ -72,7 +72,7 @@ def test_scatter_data_with_group_color():
 
 
 def test_scatter_data_samples_down_to_max_points():
-    df = pd.DataFrame({'x': range(5005), 'y': range(5005)})
+    df = pd.DataFrame({'x': range(5010), 'y': range(5010)})
     result = chart_data.scatter_data(df, 'x', 'y', max_points=100)
     assert result['n_points'] == 100
 

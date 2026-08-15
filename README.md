@@ -306,12 +306,19 @@ fix it by itself.
    ```
    GEMINI_API_KEY=your-real-key-here
    ```
-4. (Optional) `GEMINI_MODEL` defaults to `gemini-2.0-flash`, a free-tier
-   model — override it in `.env` if you want a different one. Free-tier
-   Flash models have a per-minute and per-day request cap (check your
-   current limits on the quota page in AI Studio); this app's Phase 3
-   features are a handful of short calls per prediction, well within
-   normal usage for one person testing locally.
+4. (Optional) `GEMINI_MODEL` defaults to `gemini-flash-latest` — Google's
+   own auto-updating alias for whichever free-tier Flash model they
+   currently recommend, deliberately not a dated model ID. Google has
+   been retiring specific model versions (`gemini-2.0-flash`, then
+   `gemini-2.5-flash`) faster than their own published shutdown dates
+   promised in 2026, so pinning to a dated ID here tends to break again
+   within a few months. If you see an error like `This model
+models/gemini-X.X-flash is no longer available`, that's this
+   happening — either leave `GEMINI_MODEL` unset (use the alias) or
+   check https://ai.google.dev/gemini-api/docs/deprecations for
+   whatever's currently recommended and set that instead. The app also
+   automatically retries a short list of other free-tier models if the
+   configured one comes back "not found" (see `services/llm.py`).
 
 A new key from Google AI Studio starts on the free tier automatically —
 you don't need to opt into anything or attach a payment method to use
@@ -393,7 +400,7 @@ resetting.
 Open in browser:
 
 ```bash
-http://127.0.0.1:5005
+http://127.0.0.1:5010
 ```
 
 ---
@@ -468,11 +475,11 @@ Beyond basic login/register, the app now has:
   To enable:
   1. Google: create OAuth credentials at
      https://console.cloud.google.com/apis/credentials — authorized
-     redirect URI: `http://localhost:5005/oauth/google/callback`
+     redirect URI: `http://localhost:5010/oauth/google/callback`
      (adjust host/port for your deployment)
   2. GitHub: create an OAuth App at
      https://github.com/settings/developers — callback URL:
-     `http://localhost:5005/oauth/github/callback`
+     `http://localhost:5010/oauth/github/callback`
   3. Set the client ID/secret pairs in `.env` — the sign-in buttons only
      appear once configured, no code changes needed.
      Signing in with a provider whose email matches an existing account

@@ -26,7 +26,7 @@ class Config:
     # to template-based text, same fail-soft-and-say-so pattern as the
     # weather demo fallback.
     GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-    GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
+    GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-flash-latest')
 
     # SEC-2: CORS is permissive ('*') by default for local dev, matching
     # the original project's behavior. Set CORS_ALLOWED_ORIGINS to a

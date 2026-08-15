@@ -214,8 +214,8 @@ between:
   docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-extract -p /opt/car.lua /data/us-northeast-latest.osm.pbf
   docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-partition /data/us-northeast-latest.osrm
   docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-customize /data/us-northeast-latest.osrm
-  docker run -t -i -p 5005:5005 -v "${PWD}:/data" osrm/osrm-backend osrm-routed --algorithm mld /data/us-northeast-latest.osrm
-  # then: OSRM_BASE_URL=http://localhost:5005
+  docker run -t -i -p 5010:5010 -v "${PWD}:/data" osrm/osrm-backend osrm-routed --algorithm mld /data/us-northeast-latest.osrm
+  # then: OSRM_BASE_URL=http://localhost:5010
   ```
 - `ors` + `ORS_API_KEY` — use OpenRouteService's free tier instead of
   OSRM entirely (sign up at https://openrouteservice.org/dev/#/signup).
@@ -241,9 +241,15 @@ facts; it never computes a number.**
 ### 6.1 `services/llm.py` — thin Gemini generateContent API wrapper
 
 - Reads `GEMINI_API_KEY` / `GEMINI_MODEL` from Flask config
-  (`config.py`), defaulting to `gemini-2.0-flash` — a free-tier model,
-  chosen deliberately so this feature works entirely on a no-billing
-  key from https://aistudio.google.com/apikey.
+  (`config.py`), defaulting to `gemini-flash-latest` — Google's own
+  auto-updating alias for whichever free-tier Flash model they
+  currently recommend, chosen deliberately over a dated model ID since
+  Google has been retiring those faster than their published shutdown
+  dates in 2026 (`gemini-2.0-flash`, then `gemini-2.5-flash`, both
+  404'd before their announced retirement date). If the configured
+  model is ever retired anyway, `call_gemini()` automatically retries a
+  short fallback list of other free-tier models (`FALLBACK_MODELS`)
+  before giving up.
 - `call_gemini(app_config, system_prompt, user_message, max_tokens)`
   returns `(text, error)` — never raises. Every caller in
   `ai_features.py` checks `error` and falls back to a template instead

@@ -26,8 +26,18 @@
             </div>
 
             <nav class="sidebar-nav">
-                <div class="nav-section">
-                    <div class="nav-section-title">Main</div>
+                <div class="nav-search-wrap" id="navSearchWrap">
+                    <span class="nav-search-icon">🔍</span>
+                    <input type="text" class="nav-search-input" id="navSearchInput" placeholder="Search features...">
+                    <button type="button" class="nav-search-clear" id="navSearchClear" title="Clear search">✕</button>
+                </div>
+
+                <div class="nav-section" data-section="main" data-default-collapsed="false">
+                    <div class="nav-section-title" data-toggle-section="main">
+                        <span>Main</span>
+                        <span class="nav-section-chevron">▾</span>
+                    </div>
+                    <div class="nav-section-body" id="nav-body-main">
                     <a href="{{ url_for('dashboard.index') }}" class="nav-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
                         <span class="nav-icon">📊</span> Dashboard
                     </a>
@@ -40,10 +50,15 @@
                     <a href="{{ url_for('vehicles.list_vehicles') }}" class="nav-link {% if request.endpoint and 'vehicles' in request.endpoint %}active{% endif %}">
                         <span class="nav-icon">🚗</span> EV Vehicles
                     </a>
+                                    </div>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">Analysis</div>
+<div class="nav-section" data-section="analysis" data-default-collapsed="false">
+                    <div class="nav-section-title" data-toggle-section="analysis">
+                        <span>Analysis</span>
+                        <span class="nav-section-chevron">▾</span>
+                    </div>
+                    <div class="nav-section-body" id="nav-body-analysis">
                     <a href="{{ url_for('weather.index') }}" class="nav-link {% if request.endpoint and 'weather' in request.endpoint %}active{% endif %}">
                         <span class="nav-icon">🌤️</span> Weather
                     </a>
@@ -68,10 +83,15 @@
                     <a href="{{ url_for('compare.index') }}" class="nav-link {% if request.endpoint and 'compare' in request.endpoint %}active{% endif %}">
                         <span class="nav-icon">📈</span> Compare EVs
                     </a>
+                                    </div>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">👤 User Dashboard</div>
+<div class="nav-section" data-section="user-dashboard" data-default-collapsed="true">
+                    <div class="nav-section-title" data-toggle-section="user-dashboard">
+                        <span>👤 User Dashboard</span>
+                        <span class="nav-section-chevron">▾</span>
+                    </div>
+                    <div class="nav-section-body" id="nav-body-user-dashboard">
                     <a href="{{ url_for('dashboard.personalized') }}" class="nav-link {% if request.endpoint == 'dashboard.personalized' %}active{% endif %}">
                         <span class="nav-icon">👤</span> Personalized Dashboard
                     </a>
@@ -96,10 +116,15 @@
                     <a href="{{ url_for('dashboard.activity_page') }}" class="nav-link {% if request.endpoint == 'dashboard.activity_page' %}active{% endif %}">
                         <span class="nav-icon">🕒</span> Recent Activity
                     </a>
+                                    </div>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">🔔 Notifications</div>
+<div class="nav-section" data-section="notifications" data-default-collapsed="true">
+                    <div class="nav-section-title" data-toggle-section="notifications">
+                        <span>🔔 Notifications</span>
+                        <span class="nav-section-chevron">▾</span>
+                    </div>
+                    <div class="nav-section-body" id="nav-body-notifications">
                     <a href="{{ url_for('notifications.preferences_page') }}#low-battery" class="nav-link {% if request.endpoint == 'notifications.preferences_page' %}active{% endif %}">
                         <span class="nav-icon">🔋</span> Low Battery Alerts
                     </a>
@@ -124,10 +149,15 @@
                     <a href="{{ url_for('notifications.index') }}" class="nav-link {% if request.endpoint == 'notifications.index' %}active{% endif %}">
                         <span class="nav-icon">🔔</span> In-App Notifications
                     </a>
+                                    </div>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">💰 Cost Analysis</div>
+<div class="nav-section" data-section="cost-analysis" data-default-collapsed="true">
+                    <div class="nav-section-title" data-toggle-section="cost-analysis">
+                        <span>💰 Cost Analysis</span>
+                        <span class="nav-section-chevron">▾</span>
+                    </div>
+                    <div class="nav-section-body" id="nav-body-cost-analysis">
                     <a href="{{ url_for('cost.index') }}" class="nav-link {% if request.endpoint == 'cost.index' %}active{% endif %}">
                         <span class="nav-icon">💵</span> Charging Cost Calculator
                     </a>
@@ -149,10 +179,15 @@
                     <a href="{{ url_for('cost.history_page') }}" class="nav-link {% if request.endpoint == 'cost.history_page' %}active{% endif %}">
                         <span class="nav-icon">🧾</span> Charging Cost History
                     </a>
+                                    </div>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">🌱 Sustainability</div>
+<div class="nav-section" data-section="sustainability" data-default-collapsed="true">
+                    <div class="nav-section-title" data-toggle-section="sustainability">
+                        <span>🌱 Sustainability</span>
+                        <span class="nav-section-chevron">▾</span>
+                    </div>
+                    <div class="nav-section-body" id="nav-body-sustainability">
                     <a href="{{ url_for('sustainability.index') }}" class="nav-link {% if request.endpoint == 'sustainability.index' %}active{% endif %}">
                         <span class="nav-icon">🌱</span> CO₂ Savings Calculator
                     </a>
@@ -168,10 +203,15 @@
                     <a href="{{ url_for('sustainability.green_score_page') }}" class="nav-link {% if request.endpoint == 'sustainability.green_score_page' %}active{% endif %}">
                         <span class="nav-icon">🍃</span> Green Driving Score
                     </a>
+                                    </div>
                 </div>
 
-                <div class="nav-section">
-                    <div class="nav-section-title">Data</div>
+<div class="nav-section" data-section="data" data-default-collapsed="false">
+                    <div class="nav-section-title" data-toggle-section="data">
+                        <span>Data</span>
+                        <span class="nav-section-chevron">▾</span>
+                    </div>
+                    <div class="nav-section-body" id="nav-body-data">
                     <a href="{{ url_for('datasets.index') }}" class="nav-link {% if request.endpoint and 'datasets' in request.endpoint %}active{% endif %}">
                         <span class="nav-icon">📁</span> Datasets
                     </a>
@@ -183,11 +223,16 @@
                         <span class="nav-icon">⚙️</span> Admin Panel
                     </a>
                     {% endif %}
+                                    </div>
                 </div>
 
-                {% if current_user.is_authenticated and current_user.is_admin %}
-                <div class="nav-section">
-                    <div class="nav-section-title">👨‍💼 Admin Dashboard</div>
+{% if current_user.is_authenticated and current_user.is_admin %}
+                <div class="nav-section" data-section="admin-dashboard" data-default-collapsed="true">
+                    <div class="nav-section-title" data-toggle-section="admin-dashboard">
+                        <span>👨‍💼 Admin Dashboard</span>
+                        <span class="nav-section-chevron">▾</span>
+                    </div>
+                    <div class="nav-section-body" id="nav-body-admin-dashboard">
                     <a href="{{ url_for('admin.manage_users') }}" class="nav-link {% if request.endpoint == 'admin.manage_users' %}active{% endif %}">
                         <span class="nav-icon">👥</span> User Management
                     </a>
@@ -218,8 +263,11 @@
                     <a href="{{ url_for('admin.report_management') }}" class="nav-link {% if request.endpoint == 'admin.report_management' %}active{% endif %}">
                         <span class="nav-icon">📄</span> Report Management
                     </a>
+                                    </div>
                 </div>
-                {% endif %}
+
+{% endif %}
+                <div class="nav-empty-state" id="navEmptyState">No features match your search.</div>
             </nav>
 
             <div class="sidebar-footer">

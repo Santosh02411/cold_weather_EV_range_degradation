@@ -25,6 +25,126 @@ function toggleSidebar() {
   document.querySelector(".sidebar")?.classList.toggle("open");
 }
 
+// ═══ Sidebar Navigation: collapsible sections + live search ═══
+// With this many feature areas, a flat always-expanded list stopped being
+// usable -- sections collapse/expand (state remembered per-browser via
+// localStorage), and typing in the search box filters every nav link by
+// text, auto-expanding whichever sections still have a match.
+(function () {
+  const STORAGE_KEY = "navSectionState";
+
+  function loadSectionState() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveSectionState(state) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      /* localStorage unavailable (private mode etc.) -- just don't persist */
+    }
+  }
+
+  function setSectionCollapsed(section, collapsed) {
+    section.classList.toggle("collapsed", collapsed);
+  }
+
+  function initSidebarNav() {
+    const sections = document.querySelectorAll(".sidebar-nav .nav-section");
+    if (!sections.length) return;
+
+    const state = loadSectionState();
+
+    sections.forEach((section) => {
+      const slug = section.dataset.section;
+      const defaultCollapsed = section.dataset.defaultCollapsed === "true";
+      const hasActiveLink = section.querySelector(".nav-link.active") !== null;
+
+      // Saved state wins; otherwise fall back to the section's own
+      // default; either way, a section containing the current page
+      // is always forced open so you never lose your place.
+      let collapsed = slug in state ? state[slug] : defaultCollapsed;
+      if (hasActiveLink) collapsed = false;
+      setSectionCollapsed(section, collapsed);
+
+      const title = section.querySelector(".nav-section-title");
+      title?.addEventListener("click", () => {
+        const nowCollapsed = !section.classList.contains("collapsed");
+        setSectionCollapsed(section, nowCollapsed);
+        const current = loadSectionState();
+        current[slug] = nowCollapsed;
+        saveSectionState(current);
+      });
+    });
+
+    // --- Search ---
+    const input = document.getElementById("navSearchInput");
+    const clearBtn = document.getElementById("navSearchClear");
+    const wrap = document.getElementById("navSearchWrap");
+    const sidebarNav = document.querySelector(".sidebar-nav");
+    if (!input) return;
+
+    // Remembers each section's collapse state from just before a
+    // search started, so clearing the search restores it exactly
+    // rather than leaving everything expanded.
+    let preSearchState = null;
+
+    function applySearch(query) {
+      const q = query.trim().toLowerCase();
+      wrap.classList.toggle("has-query", q.length > 0);
+
+      if (!q) {
+        if (preSearchState) {
+          sections.forEach((section) => {
+            setSectionCollapsed(section, preSearchState.get(section) || false);
+          });
+          preSearchState = null;
+        }
+        sidebarNav
+          .querySelectorAll(".nav-link")
+          .forEach((link) => link.classList.remove("search-hidden"));
+        sidebarNav.classList.remove("no-results");
+        return;
+      }
+
+      if (!preSearchState) {
+        preSearchState = new Map();
+        sections.forEach((section) =>
+          preSearchState.set(section, section.classList.contains("collapsed")),
+        );
+      }
+
+      let anyMatch = false;
+      sections.forEach((section) => {
+        const links = section.querySelectorAll(".nav-link");
+        let sectionHasMatch = false;
+        links.forEach((link) => {
+          const text = link.textContent.toLowerCase();
+          const matches = text.includes(q);
+          link.classList.toggle("search-hidden", !matches);
+          if (matches) sectionHasMatch = true;
+        });
+        setSectionCollapsed(section, !sectionHasMatch);
+        if (sectionHasMatch) anyMatch = true;
+      });
+      sidebarNav.classList.toggle("no-results", !anyMatch);
+    }
+
+    input.addEventListener("input", () => applySearch(input.value));
+    clearBtn?.addEventListener("click", () => {
+      input.value = "";
+      applySearch("");
+      input.focus();
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", initSidebarNav);
+})();
+
 // ═══ Fetch helper ═══
 async function apiFetch(url, options = {}) {
   const defaults = {
@@ -59,7 +179,7 @@ document.addEventListener("DOMContentLoaded", function () {
       setTimeout(function () {
         alert.remove();
       }, 300);
-    }, 5005);
+    }, 5010);
   });
 });
 
@@ -896,7 +1016,7 @@ function showAlert(type, message) {
   setTimeout(() => {
     div.style.opacity = "0";
     setTimeout(() => div.remove(), 300);
-  }, 5005);
+  }, 5010);
 }
 
 // ═══ Dataset Upload ═══

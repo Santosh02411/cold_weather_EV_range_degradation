@@ -26,9 +26,16 @@ a paid provider, specifically so this feature works entirely on a free
 API key with no billing account required — a key from
 https://aistudio.google.com/apikey starts on the free tier automatically
 (see README "Getting a Gemini API key"). Default model is
-gemini-2.0-flash, a free-tier model as of this writing; override via
-GEMINI_MODEL if your account has access to a different free-tier model
-(e.g. a newer Flash release) you'd rather use instead.
+gemini-flash-latest, Google's own auto-updating alias for whichever
+Flash-tier model they currently recommend (free-tier eligible) — this
+is deliberate: Google has been retiring dated model IDs faster than
+their own published shutdown dates promise (gemini-2.0-flash and, later,
+gemini-2.5-flash both started 404ing before their announced retirement
+date), so pointing at a hardcoded dated ID here would just break again.
+If GEMINI_MODEL is still somehow unavailable, call_gemini() retries once
+against a short list of other current free-tier models before giving up
+(see FALLBACK_MODELS below) — override GEMINI_MODEL in .env if you want
+a specific model instead of the alias.
 
 IMPORTANT — like Phase 2's geo.py, the actual API calls here were
 written against Gemini's documented generateContent REST API but could
@@ -41,24 +48,26 @@ import requests
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
+# Tried in order, after GEMINI_MODEL itself, only when the configured
+# model comes back "not found" / "no longer available" -- Google's own
+# deprecation cadence has been unpredictable enough (see module
+# docstring) that a single hardcoded fallback isn't much safer than the
+# primary model alone. All three below were confirmed free-tier-eligible
+# Flash-family models as of August 2026; if all three ever fail too,
+# check https://ai.google.dev/gemini-api/docs/deprecations for whatever
+# Google currently recommends and update GEMINI_MODEL in .env.
+FALLBACK_MODELS = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite']
+
+_MODEL_UNAVAILABLE_MARKERS = ('no longer available', 'not found', 'not_found')
+
 
 def is_configured(app_config):
     key = app_config.get('GEMINI_API_KEY', '')
     return bool(key)
 
 
-def call_gemini(app_config, system_prompt, user_message, max_tokens=500, timeout=30):
-    """Low-level call to the Gemini generateContent API. Returns
-    (text, error) — exactly one of which is None. Never raises to the
-    caller; every failure mode (missing key, network error, blocked
-    response, unexpected response shape) comes back as a plain string
-    error so callers can fall back cleanly.
-    """
-    api_key = app_config.get('GEMINI_API_KEY', '')
-    if not api_key:
-        return None, 'GEMINI_API_KEY not configured'
-
-    model = app_config.get('GEMINI_MODEL', 'gemini-2.0-flash')
+def _post_generate(api_key, model, system_prompt, user_message, max_tokens, timeout):
+    """One raw call to a specific model. Returns (text, error, is_model_unavailable)."""
     url = f"{GEMINI_API_BASE}/{model}:generateContent"
     headers = {
         'x-goog-api-key': api_key,
@@ -76,9 +85,8 @@ def call_gemini(app_config, system_prompt, user_message, max_tokens=500, timeout
 
         candidates = data.get('candidates') or []
         if not candidates:
-            # Most commonly a safety block with no candidate returned at all.
             feedback = data.get('promptFeedback', {}).get('blockReason')
-            return None, 'No response candidates from Gemini' + (f' (blocked: {feedback})' if feedback else '')
+            return None, 'No response candidates from Gemini' + (f' (blocked: {feedback})' if feedback else ''), False
 
         finish_reason = candidates[0].get('finishReason')
         parts = candidates[0].get('content', {}).get('parts', [])
@@ -86,16 +94,46 @@ def call_gemini(app_config, system_prompt, user_message, max_tokens=500, timeout
 
         if not text:
             if finish_reason and finish_reason not in ('STOP', 'MAX_TOKENS'):
-                return None, f'Gemini returned no text (finishReason: {finish_reason})'
-            return None, 'Empty response from model'
-        return text, None
+                return None, f'Gemini returned no text (finishReason: {finish_reason})', False
+            return None, 'Empty response from model', False
+        return text, None, False
     except requests.exceptions.HTTPError as e:
-        # Surface the API's own error message where possible (e.g. bad
-        # key, rate limit) rather than a bare status code.
         try:
             detail = resp.json().get('error', {}).get('message', str(e))
         except Exception:
             detail = str(e)
-        return None, f'Gemini API error: {detail}'
+        is_unavailable = resp.status_code == 404 or any(m in detail.lower() for m in _MODEL_UNAVAILABLE_MARKERS)
+        return None, f'Gemini API error: {detail}', is_unavailable
     except Exception as e:
-        return None, f'LLM request failed: {e}'
+        return None, f'LLM request failed: {e}', False
+
+
+def call_gemini(app_config, system_prompt, user_message, max_tokens=500, timeout=30):
+    """Call to the Gemini generateContent API, with automatic fallback
+    to FALLBACK_MODELS if the configured model has been retired.
+    Returns (text, error) — exactly one of which is None. Never raises
+    to the caller; every failure mode (missing key, network error,
+    blocked response, retired model, unexpected response shape) comes
+    back as a plain string error so callers can fall back to their own
+    template text cleanly.
+    """
+    api_key = app_config.get('GEMINI_API_KEY', '')
+    if not api_key:
+        return None, 'GEMINI_API_KEY not configured'
+
+    primary_model = app_config.get('GEMINI_MODEL', 'gemini-flash-latest')
+    models_to_try = [primary_model] + [m for m in FALLBACK_MODELS if m != primary_model]
+
+    last_error = None
+    for i, model in enumerate(models_to_try):
+        text, error, is_unavailable = _post_generate(api_key, model, system_prompt, user_message, max_tokens, timeout)
+        if text is not None:
+            return text, None
+        last_error = error
+        if not is_unavailable:
+            # A real failure (bad key, network, safety block) -- retrying
+            # against a different model wouldn't fix it, so stop here.
+            return None, error
+        # Model itself was retired/not found -- worth trying the next one.
+
+    return None, f"{last_error} (also tried fallback models: {', '.join(models_to_try[1:])})"

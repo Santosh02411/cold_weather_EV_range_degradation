@@ -160,7 +160,7 @@ def lime_explanation(features, model_name='random_forest', num_features=8, num_s
     regression, LIME's default) to the target model's behavior in the
     immediate neighborhood of this specific input.
 
-    `num_samples` is capped well below LIME's default (5005) so this
+    `num_samples` is capped well below LIME's default (5010) so this
     stays fast enough for an interactive request -- fewer perturbation
     samples means a slightly noisier local approximation, an accepted
     trade-off for API-call latency.

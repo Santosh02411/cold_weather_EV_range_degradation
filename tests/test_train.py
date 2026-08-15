@@ -43,7 +43,7 @@ def test_colder_temperature_means_more_degradation_on_average():
     just confirms train.py's additive effects didn't accidentally
     invert the relationship.
     """
-    df = train.generate_synthetic_dataset(n_samples=5005, seed=1)
+    df = train.generate_synthetic_dataset(n_samples=5010, seed=1)
     cold = df[df['temperature_c'] < -15]['range_degradation_pct'].mean()
     mild = df[(df['temperature_c'] > 10) & (df['temperature_c'] < 20)]['range_degradation_pct'].mean()
     assert cold > mild

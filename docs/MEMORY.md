@@ -888,7 +888,9 @@ Switched to Google's Gemini `generateContent` REST API on request,
 specifically so the AI Trip Briefing / Q&A / anomaly-narration features
 (`services/ai_features.py`) work entirely on a free-tier key with no
 billing account required (`GEMINI_API_KEY` from
-https://aistudio.google.com/apikey, default model `gemini-2.0-flash`).
+https://aistudio.google.com/apikey, default model `gemini-flash-latest`
+-- Google's own auto-updating alias, not a dated model ID; see the
+follow-up entry below for why).
 
 **What changed:** `llm.py`'s request/response shape (Gemini's
 `system_instruction`/`contents` request fields and
@@ -910,3 +912,73 @@ against Gemini's documented API shape but not executed against the live
 internet in this sandbox (no outbound network here) -- test with a real
 `GEMINI_API_KEY` before relying on it. See `docs/PROJECT_WORKFLOW.md`
 "Later update" entry and `docs/TECHNICAL_ARCHITECTURE.md` §6.1 for more.
+
+---
+
+## Follow-up — `gemini-2.0-flash` retired mid-use, switched to an auto-updating alias
+
+The Gemini swap above originally defaulted `GEMINI_MODEL` to
+`gemini-2.0-flash`. That model was shut down (June 1, 2026) and started
+returning `404: This model models/gemini-2.0-flash is no longer
+available` -- confirmed as a real, reported failure in production use,
+not a hypothetical.
+
+**Decision: default `GEMINI_MODEL` to `gemini-flash-latest` (Google's
+own alias), not another dated model ID.** Research into Google's 2026
+deprecation pattern found this isn't a one-time fluke: `gemini-2.5-flash`
+and `gemini-2.5-flash-lite` also started 404'ing in July 2026, *weeks*
+before their own officially published October 16, 2026 shutdown date
+(confirmed on Google's own developer forum). Pinning to any specific
+dated Flash model ID in this app would very likely break again on a
+similar timeline. `gemini-flash-latest` is Google's own documented alias
+that always points at whatever Flash-tier (free) model they currently
+recommend (as of this writing, GA `gemini-3.5-flash`) -- using it is the
+only approach that doesn't require another manual fix each time Google
+rotates models.
+
+**Decision: `call_gemini()` also retries a short fallback list
+(`FALLBACK_MODELS` in `services/llm.py`) if the configured model comes
+back "not found"/"no longer available", before giving up and falling
+back to template text.** Belt-and-suspenders on top of the alias, in
+case the alias itself is ever slow to update or a specific
+`GEMINI_MODEL` override goes stale. A real API failure (bad key,
+network error, safety block) does NOT trigger the fallback retry --
+only a model-not-found-style error does, so this can't mask a
+genuinely broken key behind a misleading "it worked on the second try"
+kind of silence.
+
+---
+
+## Sidebar reorganization — collapsible sections + live search
+
+With 8 nav sections and ~53 individual links accumulated across
+Phases 6-10, a flat always-expanded sidebar had become genuinely hard
+to scroll/scan (reported directly). Two changes, both in
+`base.html`/`style.css`/`main.js`, no backend changes:
+
+**Collapsible sections**, state remembered per-browser via
+`localStorage` (`navSectionState`), not a new backend preference --
+this is pure UI chrome, not something that needs to sync across
+devices or be queryable, so a server-side model would have been the
+wrong tool. Defaults: `Main`, `Analysis`, and `Data` (the original,
+smaller, most-frequently-used sections) start expanded; the four large
+Phase 6-10 sections (`User Dashboard`, `Notifications`, `Cost
+Analysis`, `Sustainability`) and `Admin Dashboard` start collapsed.
+Whichever section contains the page you're currently on is always
+force-expanded regardless of saved state, so collapsing everything can
+never hide where you are.
+
+**Live search** (`navSearchInput`) filters nav links by their visible
+text as you type, auto-collapsing sections with no match and
+expanding ones that do -- restores each section's exact prior
+collapsed/expanded state when the search is cleared, rather than
+leaving everything expanded afterward.
+
+No new routes, models, or tests needed -- this is client-side
+filtering over content the server already sends; verified by rendering
+`dashboard.index` through the real Flask app (both as an admin and a
+regular user, confirming Admin Dashboard is still gated correctly) and
+checking the JS parses cleanly, but the actual click/type interactions
+weren't exercised in a real browser (same standing sandbox limitation
+as every other frontend-only change in this project — see
+`docs/TECHNICAL_ARCHITECTURE.md`).

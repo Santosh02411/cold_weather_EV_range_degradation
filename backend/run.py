@@ -27,5 +27,5 @@ if __name__ == '__main__':
         print("[OK] ML models trained and saved!")
 
     print("\n[CAR] Cold Weather EV Range Degradation Modeler")
-    print("   http://127.0.0.1:5005\n")
-    app.run(host='0.0.0.0', port=5005, debug=True)
+    print("   http://127.0.0.1:5010\n")
+    app.run(host='0.0.0.0', port=5010, debug=True)
