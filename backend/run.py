@@ -42,6 +42,27 @@ def _ensure_models_trained():
 
 _ensure_models_trained()
 
+def _ensure_seeded():
+    """Creates the admin account (and demo account, unless
+    SEED_DEMO_USER=false) and seeds the vehicle catalog if the
+    database is empty -- same idempotent seed() function `python
+    seed_data.py` runs standalone, called automatically here instead
+    because some hosts (Render's free tier, notably) don't offer shell
+    access to run that command manually after a deploy. Safe to run on
+    every startup: seed_data.seed() checks for existing users/vehicles
+    before creating anything, so this is a no-op after the first real
+    boot.
+
+    Set ADMIN_PASSWORD (and DEMO_PASSWORD, if SEED_DEMO_USER=true) in
+    your host's environment variables for a fixed password instead of
+    letting this generate and log a random one once -- see README
+    "Seed the Database".
+    """
+    import seed_data
+    seed_data.seed(app)
+
+
+_ensure_seeded()
 if __name__ == '__main__':
     print("\n[CAR] Cold Weather EV Range Degradation Modeler")
     print("   http://127.0.0.1:5000\n")
