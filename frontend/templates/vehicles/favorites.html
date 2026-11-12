@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Favorite Vehicles — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}❤️ Favorite Vehicles{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div id="favoritesGrid" class="vehicle-grid">
+        <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function unfavorite(vehicleId) {
+    try {
+        await apiFetch(`/vehicles/api/${vehicleId}/favorite`, { method: 'DELETE' });
+        loadFavorites();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+function vehicleCard(v) {
+    return `
+        <div class="vehicle-card">
+            <div style="display:flex;justify-content:space-between;align-items:start;">
+                <div>
+                    <div class="vehicle-brand">${v.manufacturer}</div>
+                    <div class="vehicle-name">${v.model_name}</div>
+                </div>
+                <button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="unfavorite(${v.id})">❤️</button>
+            </div>
+            <div class="vehicle-specs">
+                <div class="spec-item"><span class="spec-label">Battery</span><span class="spec-value">${v.battery_capacity_kwh} kWh</span></div>
+                <div class="spec-item"><span class="spec-label">EPA Range</span><span class="spec-value">${v.epa_range_km} km</span></div>
+                <div class="spec-item"><span class="spec-label">Chemistry</span><span class="spec-value"><span class="badge badge-blue">${v.battery_chemistry}</span></span></div>
+            </div>
+            <div style="margin-top:14px;">
+                <a href="/vehicles/view/${v.id}" class="btn btn-outline btn-sm">👁️ Details</a>
+            </div>
+        </div>`;
+}
+
+async function loadFavorites() {
+    const el = document.getElementById('favoritesGrid');
+    try {
+        const result = await apiFetch('/vehicles/api/favorites');
+        const vehicles = result.vehicles || [];
+        if (!vehicles.length) {
+            el.innerHTML = `<div class="card" style="grid-column:1/-1;text-align:center;padding:40px;">
+                <p style="font-size:18px;color:var(--text-muted);">No favorite vehicles yet.</p>
+                <a href="{{ url_for('vehicles.list_vehicles') }}" class="btn btn-primary" style="margin-top:12px;">🚗 Browse Vehicles</a>
+            </div>`;
+            return;
+        }
+        el.innerHTML = vehicles.map(vehicleCard).join('');
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', loadFavorites);
+</script>
+{% endblock %}

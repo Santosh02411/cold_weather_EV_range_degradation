@@ -108,6 +108,11 @@ def create_app(config_name=None):
     from .api.dashboard import dashboard_bp
     from .api.community import community_bp
     from .api.alerts import alerts_bp
+    from .api.explain import explain_bp
+    from .api.visualize import visualize_bp
+    from .api.notifications import notifications_bp
+    from .api.cost import cost_bp
+    from .api.sustainability import sustainability_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(vehicles_bp, url_prefix='/vehicles')
@@ -123,6 +128,11 @@ def create_app(config_name=None):
     app.register_blueprint(dashboard_bp, url_prefix='/dashboard')
     app.register_blueprint(community_bp, url_prefix='/community')
     app.register_blueprint(alerts_bp, url_prefix='/alerts')
+    app.register_blueprint(explain_bp, url_prefix='/explain')
+    app.register_blueprint(visualize_bp, url_prefix='/visualize')
+    app.register_blueprint(notifications_bp, url_prefix='/notifications')
+    app.register_blueprint(cost_bp, url_prefix='/cost')
+    app.register_blueprint(sustainability_bp, url_prefix='/sustainability')
 
     # Create tables. Coexists with Flask-Migrate (INFRA-1) deliberately:
     # create_all() is a convenience for a brand-new local dev DB (never
@@ -133,7 +143,7 @@ def create_app(config_name=None):
     # still works with zero migration commands; it just isn't how you
     # evolve a database that already has real data in it.
     with app.app_context():
-        from .models import user, ev_vehicle, prediction, dataset, battery_health, alert_subscription, session as user_session_model, vehicle_interactions
+        from .models import user, ev_vehicle, prediction, dataset, battery_health, alert_subscription, session as user_session_model, vehicle_interactions, trip_plan, charging_reservation, report, notification, cost_preference
         db.create_all()
 
     # Real session revocation: check the current request's session

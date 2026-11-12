@@ -20,10 +20,13 @@ class Config:
     WEATHERAPI_KEY = os.environ.get('WEATHERAPI_KEY', 'demo')
 
     # Phase 3: LLM-grounded trip briefings / assistant (see services/llm.py).
-    # No key -> features fall back to template-based text, same
-    # fail-soft-and-say-so pattern as the weather demo fallback.
-    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
-    ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-5')
+    # Uses Google's free-tier Gemini API rather than a paid provider, so
+    # this works entirely on a no-billing-required key from
+    # https://aistudio.google.com/apikey. No key -> features fall back
+    # to template-based text, same fail-soft-and-say-so pattern as the
+    # weather demo fallback.
+    GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+    GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-flash-latest')
 
     # SEC-2: CORS is permissive ('*') by default for local dev, matching
     # the original project's behavior. Set CORS_ALLOWED_ORIGINS to a
@@ -112,6 +115,53 @@ class Config:
     ML_MODELS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ml', 'saved_models')
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data', 'uploads')
 
+    # Live Model Retraining / data-drift monitoring (see
+    # services/drift_monitor.py, services/scheduler.py). Same pattern
+    # as ALERTS_ENABLED above: this only controls whether the periodic
+    # background CHECK runs at all. Whether a detected drift actually
+    # triggers a retrain is a separate, runtime-toggleable admin
+    # setting (services/drift_monitor.py's live-retrain state file) so
+    # an admin can pause auto-retraining without restarting the app.
+    # Off by default -- auto-retraining production models unattended
+    # is a real operational decision, not something to default to on.
+    LIVE_RETRAIN_ENABLED = os.environ.get('LIVE_RETRAIN_ENABLED', 'false').lower() == 'true'
+    LIVE_RETRAIN_CHECK_INTERVAL_MINUTES = int(os.environ.get('LIVE_RETRAIN_CHECK_INTERVAL_MINUTES', '360'))
+    LIVE_RETRAIN_DRIFT_PSI_THRESHOLD = float(os.environ.get('LIVE_RETRAIN_DRIFT_PSI_THRESHOLD', '0.25'))
+    LIVE_RETRAIN_MIN_RECENT_PREDICTIONS = int(os.environ.get('LIVE_RETRAIN_MIN_RECENT_PREDICTIONS', '50'))
+
+    # Trip Planning phase: Google Maps as an optional geo provider
+    # (geocoding, routing with real traffic, elevation) alongside the
+    # free defaults above -- opt-in, since Google's APIs are paid
+    # beyond a free monthly credit (see services/geo.py's module
+    # docstring for the full rationale). Setting ROUTING_PROVIDER to
+    # 'google' (with a key) is the switch for routing; GEOCODE_PROVIDER
+    # / ELEVATION_PROVIDER separately opt geocoding/elevation into
+    # Google too, so a deployment can mix free + paid per capability.
+    GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
+    GEOCODE_PROVIDER = os.environ.get('GEOCODE_PROVIDER', 'nominatim')
+    ELEVATION_PROVIDER = os.environ.get('ELEVATION_PROVIDER', 'open_elevation')
+
+    # Trip Planning: safety margin kept in reserve when planning multi-
+    # stop/round trips and when computing a "safe" destination-
+    # recommendation radius (see services/route_planning.py).
+    TRIP_SAFETY_MARGIN_PCT = float(os.environ.get('TRIP_SAFETY_MARGIN_PCT', '15'))
+
+    # Reports phase: Scheduled Reports periodic check, gated the same
+    # way as the alerts/live-retrain jobs above. A schedule's own
+    # frequency (daily/weekly/monthly, see models/report.py) controls
+    # how often a given user's report actually goes out -- this
+    # interval only controls how often the background job checks
+    # whether anything is due, so it should stay small relative to the
+    # shortest supported frequency (daily).
+    SCHEDULED_REPORTS_ENABLED = os.environ.get('SCHEDULED_REPORTS_ENABLED', 'false').lower() == 'true'
+    SCHEDULED_REPORTS_CHECK_INTERVAL_MINUTES = int(os.environ.get('SCHEDULED_REPORTS_CHECK_INTERVAL_MINUTES', '60'))
+
+    CHARGING_REMINDERS_ENABLED = os.environ.get('CHARGING_REMINDERS_ENABLED', 'true').lower() == 'true'
+    CHARGING_REMINDER_CHECK_INTERVAL_MINUTES = int(os.environ.get('CHARGING_REMINDER_CHECK_INTERVAL_MINUTES', '10'))
+    MAINTENANCE_REMINDERS_ENABLED = os.environ.get('MAINTENANCE_REMINDERS_ENABLED', 'true').lower() == 'true'
+    MAINTENANCE_REMINDER_CHECK_INTERVAL_MINUTES = int(os.environ.get('MAINTENANCE_REMINDER_CHECK_INTERVAL_MINUTES', '360'))
+    MAINTENANCE_REMINDER_COOLDOWN_DAYS = int(os.environ.get('MAINTENANCE_REMINDER_COOLDOWN_DAYS', '14'))
+
 class DevelopmentConfig(Config):
     DEBUG = True
 
@@ -128,6 +178,10 @@ class TestingConfig(Config):
     WTF_CSRF_ENABLED = False
     RATELIMIT_ENABLED = False
     ALERTS_ENABLED = False  # don't start the background scheduler during tests
+    LIVE_RETRAIN_ENABLED = False  # ditto -- don't start the drift-check scheduler during tests
+    SCHEDULED_REPORTS_ENABLED = False  # ditto -- don't start the scheduled-reports scheduler during tests
+    CHARGING_REMINDERS_ENABLED = False  # ditto -- don't start the charging-reminder scheduler during tests
+    MAINTENANCE_REMINDERS_ENABLED = False  # ditto -- don't start the maintenance-reminder scheduler during tests
 
 config = {
     'development': DevelopmentConfig,

@@ -34,6 +34,51 @@ class Dataset(db.Model):
         }
 
 
+class DatasetVersion(db.Model):
+    """Dataset Versioning: every transformation run against a Dataset
+    (dedupe, scaling, encoding, a train/test split) creates a new row
+    here rather than overwriting the original file in place, so the
+    full lineage of how a dataset got from raw upload to whatever a
+    model was actually trained on stays inspectable -- the same
+    "never silently overwrite, always version" principle
+    ml/train.py's model versioning already applies to trained models.
+    """
+    __tablename__ = 'dataset_versions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    dataset_id = db.Column(db.Integer, db.ForeignKey('datasets.id'), nullable=False)
+    parent_version_id = db.Column(db.Integer, db.ForeignKey('dataset_versions.id'), nullable=True)
+
+    version_num = db.Column(db.Integer, nullable=False)
+    transformation = db.Column(db.String(50), nullable=False)  # 'dedupe', 'scale', 'encode', 'split_train', 'split_test', 'split_val'
+    transformation_params = db.Column(db.Text, nullable=True)  # JSON
+
+    filepath = db.Column(db.String(500), nullable=False)
+    num_rows = db.Column(db.Integer, nullable=True)
+    num_columns = db.Column(db.Integer, nullable=True)
+
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    dataset = db.relationship('Dataset', backref='versions')
+    parent_version = db.relationship('DatasetVersion', remote_side=[id], backref='child_versions')
+
+    def to_dict(self):
+        import json
+        return {
+            'id': self.id,
+            'dataset_id': self.dataset_id,
+            'parent_version_id': self.parent_version_id,
+            'version_num': self.version_num,
+            'transformation': self.transformation,
+            'transformation_params': json.loads(self.transformation_params) if self.transformation_params else None,
+            'num_rows': self.num_rows,
+            'num_columns': self.num_columns,
+            'created_by': self.created_by,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class WeatherLog(db.Model):
     __tablename__ = 'weather_logs'
 
@@ -48,6 +93,11 @@ class WeatherLog(db.Model):
     weather_condition = db.Column(db.String(50), nullable=True)
     precipitation = db.Column(db.String(20), nullable=True)
     severity = db.Column(db.String(20), nullable=True)  # mild, moderate, severe, extreme
+    # Weather API Monitoring (admin): which path this reading actually
+    # came from. Nullable so existing rows from before this column
+    # existed just show as unknown, rather than needing a backfill.
+    data_source = db.Column(db.String(20), nullable=True)  # 'live' or 'demo_fallback'
+    error_note = db.Column(db.String(255), nullable=True)  # set only on a live-API failure that fell back to demo
     fetched_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -63,5 +113,7 @@ class WeatherLog(db.Model):
             'weather_condition': self.weather_condition,
             'precipitation': self.precipitation,
             'severity': self.severity,
+            'data_source': self.data_source,
+            'error_note': self.error_note,
             'fetched_at': self.fetched_at.isoformat() if self.fetched_at else None,
         }

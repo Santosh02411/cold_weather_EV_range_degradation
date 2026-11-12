@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Weather API Monitoring — Admin{% endblock %}
+{% block page_title %}🌤️ Weather API Monitoring{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div class="stats-grid" id="weatherStatsGrid">
+        <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">🏙️ Top Cities Queried</h3></div>
+            <div id="topCitiesList" class="table-container"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">⚠️ Recent Fallback Errors</h3></div>
+            <div id="recentErrorsList" class="table-container"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">🕘 Recent Fetches</h3></div>
+        <div id="recentFetchesList" class="table-container"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+    </div>
+
+    <div style="margin-top:16px;"><a href="{{ url_for('admin.panel') }}" class="btn btn-outline">← Back to Admin Panel</a></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadWeatherMonitoring() {
+    const statsEl = document.getElementById('weatherStatsGrid');
+    const citiesEl = document.getElementById('topCitiesList');
+    const errorsEl = document.getElementById('recentErrorsList');
+    const fetchesEl = document.getElementById('recentFetchesList');
+    try {
+        const s = await apiFetch('/admin/api/weather-monitoring');
+
+        statsEl.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-icon ${s.api_key_configured ? 'green' : 'amber'}">${s.api_key_configured ? '🔑' : '🎭'}</div>
+                <div><div class="stat-value" style="font-size:16px;">${s.api_key_configured ? 'Live' : 'Demo mode'}</div><div class="stat-label">API Key Status</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon blue">📡</div>
+                <div><div class="stat-value">${s.total_fetches_logged}</div><div class="stat-label">Total Fetches Logged</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon green">✅</div>
+                <div><div class="stat-value">${s.live_success_rate_pct != null ? s.live_success_rate_pct + '%' : '--'}</div><div class="stat-label">Live Success Rate</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon purple">🗄️</div>
+                <div><div class="stat-value">${s.cache.cached_keys}</div><div class="stat-label">Cached Keys</div></div>
+            </div>`;
+
+        citiesEl.innerHTML = s.top_cities.length
+            ? `<table><thead><tr><th>City</th><th>Fetches</th></tr></thead><tbody>${s.top_cities.map(c => `<tr><td>${c.city}</td><td>${c.fetch_count}</td></tr>`).join('')}</tbody></table>`
+            : '<p style="color:var(--text-muted);font-size:13px;">No weather fetches logged yet.</p>';
+
+        errorsEl.innerHTML = s.recent_errors.length
+            ? `<table><thead><tr><th>City</th><th>Error</th><th>When</th></tr></thead><tbody>${s.recent_errors.map(e => `<tr><td>${e.city}</td><td style="font-size:11px;">${e.error_note}</td><td>${new Date(e.fetched_at).toLocaleString()}</td></tr>`).join('')}</tbody></table>`
+            : '<p style="color:var(--text-muted);font-size:13px;">No fallback errors recorded.</p>';
+
+        fetchesEl.innerHTML = s.recent_fetches.length
+            ? `<table><thead><tr><th>City</th><th>Temp</th><th>Source</th><th>When</th></tr></thead><tbody>${s.recent_fetches.map(f => `
+                <tr>
+                    <td>${f.city}</td>
+                    <td>${f.temperature_c}°C</td>
+                    <td>${f.data_source ? `<span class="badge ${f.data_source === 'live' ? 'badge-green' : 'badge-amber'}">${f.data_source}</span>` : '<span class="badge badge-blue">unknown</span>'}</td>
+                    <td>${new Date(f.fetched_at).toLocaleString()}</td>
+                </tr>`).join('')}</tbody></table>`
+            : '<p style="color:var(--text-muted);font-size:13px;">No fetches yet.</p>';
+    } catch (e) {
+        statsEl.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">${e.message}</p>`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadWeatherMonitoring);
+</script>
+{% endblock %}

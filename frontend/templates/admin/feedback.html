@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Feedback Management — Admin{% endblock %}
+{% block page_title %}🚩 Feedback Management{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        Moderation for community-submitted range reports. Flagging a report removes it from the public
+        feed and excludes it from model retraining — it isn't deleted, so a bad flag can be reversed.
+    </p>
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Community Range Reports</h3>
+            <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" id="flaggedOnly" onchange="loadReports()"> Flagged only
+            </label>
+        </div>
+        <div id="reportsList" class="table-container"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+    </div>
+    <div style="margin-top:16px;"><a href="{{ url_for('admin.panel') }}" class="btn btn-outline">← Back to Admin Panel</a></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function flagReport(id) {
+    try { await apiFetch(`/admin/api/community-reports/${id}/flag`, { method: 'POST' }); loadReports(); }
+    catch (e) { showAlert('danger', e.message); }
+}
+async function unflagReport(id) {
+    try { await apiFetch(`/admin/api/community-reports/${id}/unflag`, { method: 'POST' }); loadReports(); }
+    catch (e) { showAlert('danger', e.message); }
+}
+async function deleteReport(id) {
+    if (!confirm('Permanently delete this report? This cannot be undone.')) return;
+    try { await apiFetch(`/admin/api/community-reports/${id}`, { method: 'DELETE' }); loadReports(); }
+    catch (e) { showAlert('danger', e.message); }
+}
+
+async function loadReports() {
+    const el = document.getElementById('reportsList');
+    const flaggedOnly = document.getElementById('flaggedOnly').checked;
+    try {
+        const reports = await apiFetch(`/admin/api/community-reports${flaggedOnly ? '?flagged_only=on' : ''}`);
+        if (!reports.length) {
+            el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No reports to show.</p>';
+            return;
+        }
+        el.innerHTML = `<table><thead><tr><th>Vehicle</th><th>Temp</th><th>Reported Range</th><th>Notes</th><th>Submitted</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+            ${reports.map(r => `
+                <tr>
+                    <td>${r.vehicle ? `${r.vehicle.manufacturer} ${r.vehicle.model_name}` : '—'}</td>
+                    <td>${r.temperature_c}°C</td>
+                    <td>${r.reported_range_km} km</td>
+                    <td style="max-width:200px;font-size:11px;">${r.notes || '—'}</td>
+                    <td>${new Date(r.created_at).toLocaleDateString()}</td>
+                    <td><span class="badge ${r.is_flagged ? 'badge-red' : 'badge-green'}">${r.is_flagged ? 'Flagged' : 'Visible'}</span></td>
+                    <td>
+                        ${r.is_flagged
+                            ? `<button class="btn btn-outline btn-sm" onclick="unflagReport(${r.id})">↩️ Unflag</button>`
+                            : `<button class="btn btn-outline btn-sm" onclick="flagReport(${r.id})">🚩 Flag</button>`}
+                        <button class="btn btn-outline btn-sm" onclick="deleteReport(${r.id})">🗑️ Delete</button>
+                    </td>
+                </tr>`).join('')}
+            </tbody></table>`;
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', loadReports);
+</script>
+{% endblock %}

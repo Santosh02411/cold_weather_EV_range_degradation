@@ -129,17 +129,114 @@ body {
     padding: 12px;
 }
 
+.nav-search-wrap {
+    position: relative;
+    margin: 0 4px 14px;
+}
+
+.nav-search-input {
+    width: 100%;
+    padding: 9px 32px 9px 32px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 12.5px;
+    outline: none;
+    transition: var(--transition);
+}
+
+.nav-search-input:focus {
+    border-color: var(--accent-blue);
+}
+
+.nav-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.nav-search-clear {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 4px 6px;
+    display: none;
+    line-height: 1;
+}
+
+.nav-search-wrap.has-query .nav-search-clear {
+    display: block;
+}
+
+.nav-empty-state {
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: none;
+}
+
+.sidebar-nav.no-results .nav-empty-state {
+    display: block;
+}
+
 .nav-section {
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 .nav-section-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 1.5px;
     color: var(--text-muted);
     padding: 12px 12px 6px;
+    transition: var(--transition);
+}
+
+.nav-section-title:hover {
+    color: var(--text-secondary);
+}
+
+.nav-section-chevron {
+    font-size: 9px;
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+}
+
+.nav-section.collapsed .nav-section-chevron {
+    transform: rotate(-90deg);
+}
+
+.nav-section-body {
+    overflow: hidden;
+}
+
+.nav-section.collapsed .nav-section-body {
+    display: none;
+}
+
+.nav-link.search-hidden {
+    display: none;
 }
 
 .nav-link {

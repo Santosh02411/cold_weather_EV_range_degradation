@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block title %}Trip Planner — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🧭 Trip Planner{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">
+        Plan a multi-stop or round trip with automatic charging stops, or jump back to a
+        <a href="{{ url_for('trip.index') }}">single-leg trip simulation</a>.
+    </p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Plan a Trip</h3></div>
+            <form id="planForm" onsubmit="submitPlan(event)">
+                <div class="form-group">
+                    <label class="form-label">Select Vehicle</label>
+                    <select name="vehicle_id" id="planVehicle" class="form-control" required>
+                        <option value="">-- Choose Vehicle --</option>
+                        {% for v in vehicles %}
+                        <option value="{{ v.id }}">{{ v.manufacturer }} {{ v.model_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Stops (in order)</label>
+                    <div id="stopsList"></div>
+                    <button type="button" class="btn btn-outline btn-sm" onclick="addStopField()" style="margin-top:6px;">+ Add stop</button>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-check">
+                        <input type="checkbox" name="round_trip" id="roundTrip">
+                        <span style="font-size:13px;color:var(--text-secondary)">Round trip (return to the first stop)</span>
+                    </label>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Starting Battery (%)</label>
+                        <input type="number" name="battery_percentage" class="form-control" value="90" min="0" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Ambient Temp (°C)</label>
+                        <input type="number" name="temperature_c" class="form-control" value="-5" step="0.1">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Speed (km/h)</label>
+                        <input type="number" name="speed_kmh" class="form-control" value="90" min="20">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Driving Style</label>
+                        <select name="driving_style" class="form-control">
+                            <option value="">Standard (no adjustment)</option>
+                            <option value="auto">Use my analyzed driving style</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-check">
+                        <input type="checkbox" name="heater_usage" checked>
+                        <span style="font-size:13px;color:var(--text-secondary)">Heater On</span>
+                    </label>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg" style="width:100%;margin-top:8px;">🧭 Plan Trip</button>
+            </form>
+            <div style="display:flex;gap:10px;margin-top:10px;">
+                <button class="btn btn-outline btn-sm" onclick="saveCurrentTrip()">💾 Save this trip</button>
+                <button class="btn btn-outline btn-sm" onclick="loadDrivingStyle()">🚗 View my driving style</button>
+            </div>
+            <div id="drivingStyleResult" style="margin-top:10px;font-size:12px;color:var(--text-muted);"></div>
+        </div>
+
+        <div>
+            <div class="card">
+                <div class="card-header"><h3 class="card-title">💾 Saved Trips</h3></div>
+                <div id="savedTripsList">
+                    {% if saved_trips %}
+                        {% for t in saved_trips %}
+                        <div class="list-row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-color);">
+                            <div>
+                                <strong>{{ t.name }}</strong>
+                                <div style="font-size:12px;color:var(--text-muted);">{{ t.stops|join(' → ') }}{% if t.round_trip %} (round trip){% endif %}</div>
+                            </div>
+                            <div style="display:flex;gap:6px;">
+                                <button class="btn btn-outline btn-sm" onclick='loadSavedTrip({{ t.to_dict()|tojson }})'>Load</button>
+                                <button class="btn btn-outline btn-sm" onclick="deleteSavedTrip({{ t.id }})">✕</button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p style="color:var(--text-muted);font-size:13px;">No saved trips yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div id="planResult" style="margin-top:20px;">
+                <div class="card" style="text-align:center;padding:60px 20px;">
+                    <p style="font-size:48px;margin-bottom:12px;">🧭</p>
+                    <p style="color:var(--text-muted);">Add your stops and plan a trip.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">⚡ Speed vs. Energy Consumption</h3></div>
+            <canvas id="energyCurveChart" height="180"></canvas>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">📍 Destination Recommendations</h3></div>
+            <div class="form-row">
+                <div class="form-group">
+                    <input type="text" id="destPlace" class="form-control" placeholder="Current location, e.g. Chicago">
+                </div>
+                <div class="form-group">
+                    <select id="destCategory" class="form-control">
+                        <option value="tourism">Tourism</option>
+                        <option value="nature">Nature/Parks</option>
+                        <option value="restaurant">Restaurants</option>
+                        <option value="cafe">Cafes</option>
+                        <option value="lodging">Lodging</option>
+                    </select>
+                </div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="loadDestinations()">Find reachable destinations</button>
+            <div id="destinationsResult" style="margin-top:12px;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let stopFieldCount = 0;
+
+function addStopField(value) {
+    stopFieldCount++;
+    const container = document.getElementById('stopsList');
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;';
+    row.innerHTML = `
+        <input type="text" class="form-control stop-input" placeholder="Stop ${stopFieldCount}" value="${value || ''}" required>
+        <button type="button" class="btn btn-outline btn-sm" onclick="this.parentElement.remove()">✕</button>`;
+    container.appendChild(row);
+}
+
+function getStops() {
+    return Array.from(document.querySelectorAll('.stop-input')).map(i => i.value.trim()).filter(Boolean);
+}
+
+function setStops(stops) {
+    document.getElementById('stopsList').innerHTML = '';
+    stopFieldCount = 0;
+    (stops || ['', '']).forEach(s => addStopField(s));
+}
+
+async function submitPlan(event) {
+    event.preventDefault();
+    const form = event.target;
+    const stops = getStops();
+    if (stops.length < 2) { showAlert('danger', 'Add at least 2 stops.'); return; }
+
+    const data = {
+        vehicle_id: parseInt(form.vehicle_id.value),
+        stops: stops,
+        round_trip: form.round_trip.checked,
+        battery_percentage: parseFloat(form.battery_percentage.value),
+        temperature_c: parseFloat(form.temperature_c.value),
+        speed_kmh: parseFloat(form.speed_kmh.value),
+        driving_style: form.driving_style.value || undefined,
+        heater_usage: form.heater_usage.checked,
+    };
+
+    const btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    const original = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block;vertical-align:middle;"></span> Planning...';
+
+    try {
+        const plan = await apiFetch('/trip/api/plan', { method: 'POST', body: JSON.stringify(data) });
+        renderPlan(plan);
+        if (data.vehicle_id) loadEnergyCurve(data.vehicle_id);
+    } catch (e) {
+        showAlert('danger', e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
+function renderPlan(plan) {
+    const container = document.getElementById('planResult');
+    const feasibleBadge = plan.feasible
+        ? '<span class="badge badge-green">Feasible</span>'
+        : '<span class="badge badge-red">May not be feasible with the safety margin</span>';
+
+    const legsHtml = (plan.legs || []).map((leg, i) => `
+        <div style="padding:10px 0;border-bottom:1px solid var(--border-color);">
+            <div style="font-size:13px;"><strong>Leg ${i + 1}:</strong> ${leg.origin} → ${leg.destination}</div>
+            <div style="font-size:12px;color:var(--text-muted);">
+                ${leg.distance_km} km · ${leg.driving_duration_min} min driving · ${leg.terrain_type} terrain ·
+                battery ${leg.battery_pct_at_departure}% → ${leg.battery_pct_on_arrival}%
+            </div>
+            ${leg.charging_stop ? `<div style="font-size:12px;color:var(--accent-amber);">🔌 Charge at ${leg.charging_stop.at}: ${leg.charging_stop.charge_from_pct}% → ${leg.charging_stop.charge_to_pct}% (~${leg.charging_stop.charging_time_minutes} min)</div>` : ''}
+        </div>`).join('');
+
+    container.innerHTML = `
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Trip Plan ${feasibleBadge}</h3></div>
+            <div class="stats-grid" style="margin-bottom:10px;">
+                <div class="stat-card"><div class="stat-icon blue">🛣️</div><div><div class="stat-value">${plan.total_distance_km} km</div><div class="stat-label">Total distance</div></div></div>
+                <div class="stat-card"><div class="stat-icon green">⏱️</div><div><div class="stat-value">${Math.round(plan.total_eta_min)} min</div><div class="stat-label">Total ETA</div></div></div>
+                <div class="stat-card"><div class="stat-icon cyan">🔌</div><div><div class="stat-value">${plan.num_charging_stops}</div><div class="stat-label">Charging stops</div></div></div>
+                <div class="stat-card"><div class="stat-icon amber">🔋</div><div><div class="stat-value">${plan.final_battery_pct}%</div><div class="stat-label">Final battery</div></div></div>
+            </div>
+            ${legsHtml}
+        </div>`;
+}
+
+async function saveCurrentTrip() {
+    const stops = getStops();
+    if (stops.length < 2) { showAlert('danger', 'Add at least 2 stops first.'); return; }
+    const name = prompt('Name this saved trip:');
+    if (!name) return;
+    const vehicleId = parseInt(document.getElementById('planVehicle').value);
+    if (!vehicleId) { showAlert('danger', 'Select a vehicle first.'); return; }
+    try {
+        await apiFetch('/trip/api/saved-trips', {
+            method: 'POST',
+            body: JSON.stringify({ name, stops, vehicle_id: vehicleId, round_trip: document.getElementById('roundTrip').checked }),
+        });
+        showAlert('success', 'Trip saved.');
+        location.reload();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+function loadSavedTrip(trip) {
+    setStops(trip.stops);
+    document.getElementById('planVehicle').value = trip.vehicle_id;
+    document.getElementById('roundTrip').checked = trip.round_trip;
+}
+
+async function deleteSavedTrip(id) {
+    if (!confirm('Delete this saved trip?')) return;
+    try {
+        await apiFetch(`/trip/api/saved-trips/${id}`, { method: 'DELETE' });
+        location.reload();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+async function loadDrivingStyle() {
+    const container = document.getElementById('drivingStyleResult');
+    container.innerHTML = 'Loading…';
+    try {
+        const r = await apiFetch('/trip/api/driving-style');
+        container.innerHTML = r.status === 'ok'
+            ? `Style: <strong>${r.driving_style}</strong> (avg ${r.avg_speed_kmh} km/h across ${r.n_samples} trips) — ${r.note}`
+            : r.reason;
+    } catch (e) { container.innerHTML = e.message; }
+}
+
+let energyChart;
+async function loadEnergyCurve(vehicleId) {
+    if (!vehicleId) return;
+    try {
+        const r = await apiFetch(`/trip/api/energy-curve?vehicle_id=${vehicleId}`);
+        const ctx = document.getElementById('energyCurveChart');
+        if (energyChart) energyChart.destroy();
+        energyChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: r.curve.map(p => p.speed_kmh + ' km/h'),
+                datasets: [{ label: 'Wh/km', data: r.curve.map(p => p.wh_per_km), borderColor: '#638cff', tension: 0.3 }],
+            },
+            options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false } } },
+        });
+    } catch (e) { console.log('Energy curve:', e.message); }
+}
+
+async function loadDestinations() {
+    const place = document.getElementById('destPlace').value.trim();
+    const category = document.getElementById('destCategory').value;
+    const vehicleId = parseInt(document.getElementById('planVehicle').value);
+    const container = document.getElementById('destinationsResult');
+    if (!place) { showAlert('danger', 'Enter a location.'); return; }
+    if (!vehicleId) { showAlert('danger', 'Select a vehicle first.'); return; }
+    container.innerHTML = 'Searching…';
+    try {
+        const r = await apiFetch(`/trip/api/recommend-destinations?place=${encodeURIComponent(place)}&category=${category}&vehicle_id=${vehicleId}`);
+        container.innerHTML = r.destinations.length ? r.destinations.map(d => `
+            <div style="padding:6px 0;border-bottom:1px solid var(--border-color);font-size:13px;">
+                <strong>${d.name}</strong> — ${d.distance_km} km away (${d.round_trip_distance_km} km round trip)
+            </div>`).join('') : '<p style="color:var(--text-muted);font-size:13px;">No results found within safe range.</p>';
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">${e.message}</p>`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    setStops(['', '']);
+    document.getElementById('planVehicle').addEventListener('change', (e) => loadEnergyCurve(parseInt(e.target.value)));
+});
+</script>
+{% endblock %}

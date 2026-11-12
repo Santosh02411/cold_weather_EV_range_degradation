@@ -3,6 +3,10 @@
 {% block page_title %}🗺️ Trip Simulation{% endblock %}
 {% block content %}
 <div class="animate-fade">
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px;">
+        Need multiple stops, a round trip, or automatic charging stops? Try the
+        <a href="{{ url_for('trip.plan_page') }}">Trip Planner</a>.
+    </p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
         <div class="card">
             <div class="card-header"><h3 class="card-title">Trip Parameters</h3></div>

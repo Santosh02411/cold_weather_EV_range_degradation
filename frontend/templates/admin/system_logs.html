@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}System Logs — Admin{% endblock %}
+{% block page_title %}🗒️ System Logs{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        A merged security/system feed: every login attempt (success and failed) across all users, plus the
+        live model-retraining drift check history.
+    </p>
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Recent Events</h3>
+            <button onclick="loadLogs()" class="btn btn-outline btn-sm">Refresh</button>
+        </div>
+        <div id="logsList"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+    </div>
+    <div style="margin-top:16px;"><a href="{{ url_for('admin.panel') }}" class="btn btn-outline">← Back to Admin Panel</a></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadLogs() {
+    const el = document.getElementById('logsList');
+    try {
+        const events = await apiFetch('/admin/api/system-logs?limit=100');
+        if (!events.length) {
+            el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No events recorded yet.</p>';
+            return;
+        }
+        el.innerHTML = events.map(e => `
+            <div style="display:flex;gap:12px;align-items:start;padding:10px 0;border-bottom:1px solid var(--border-color);">
+                <div style="font-size:18px;">${e.icon}</div>
+                <div style="flex:1;">
+                    <div style="font-size:13px;">${e.title}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">
+                        ${new Date(e.timestamp).toLocaleString()}${e.ip_address ? ' · ' + e.ip_address : ''}
+                    </div>
+                </div>
+            </div>`).join('');
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', loadLogs);
+</script>
+{% endblock %}

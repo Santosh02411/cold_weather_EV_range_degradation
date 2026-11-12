@@ -93,6 +93,29 @@ class Prediction(db.Model):
         return f'<Prediction {self.id} - {self.range_degradation_pct}%>'
 
 
+class SavedPrediction(db.Model):
+    """A user-bookmarked prediction -- distinct from Prediction History
+    (which is just "every prediction I've ever run") and from
+    share_token (which is about a link an outsider can view). This is
+    the "I want to keep this one handy" flag a user sets deliberately,
+    same relationship FavoriteVehicle has to the full vehicle catalog
+    (see models/vehicle_interactions.py) -- one small join table per
+    "star this" interaction, not a boolean column on the parent model,
+    so bookmarking never needs a migration on the (much larger,
+    more-frequently-written) predictions table itself.
+    """
+    __tablename__ = 'saved_predictions'
+    __table_args__ = (db.UniqueConstraint('user_id', 'prediction_id', name='uq_saved_user_prediction'),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    prediction_id = db.Column(db.Integer, db.ForeignKey('predictions.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='saved_predictions')
+    prediction = db.relationship('Prediction')
+
+
 class TripSimulation(db.Model):
     __tablename__ = 'trip_simulations'
 

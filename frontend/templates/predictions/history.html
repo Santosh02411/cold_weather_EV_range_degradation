@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Prediction History — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🕘 Prediction History{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Your Predictions</h3>
+            <a href="{{ url_for('predictions.index') }}" class="btn btn-primary btn-sm">➕ New Prediction</a>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+            Every prediction you've run, most recent first. Bookmark any of them with 🔖 to add it to
+            <a href="{{ url_for('predictions.saved_page') }}">Saved Predictions</a>.
+        </p>
+        <div id="historyList" class="table-container"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function toggleSave(predictionId, btn) {
+    const isSaved = btn.dataset.saved === 'true';
+    try {
+        if (isSaved) {
+            await apiFetch(`/predictions/api/${predictionId}/save`, { method: 'DELETE' });
+            btn.dataset.saved = 'false';
+            btn.textContent = '🔖 Save';
+        } else {
+            await apiFetch(`/predictions/api/${predictionId}/save`, { method: 'POST' });
+            btn.dataset.saved = 'true';
+            btn.textContent = '✅ Saved';
+        }
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+async function loadHistory() {
+    const el = document.getElementById('historyList');
+    try {
+        const predictions = await apiFetch('/predictions/api/history?limit=100');
+        if (!predictions.length) {
+            el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No predictions yet — run your first one from ML Predictions.</p>';
+            return;
+        }
+        const rows = predictions.map(p => `
+            <tr>
+                <td>${new Date(p.created_at).toLocaleString()}</td>
+                <td>${p.vehicle ? `${p.vehicle.manufacturer} ${p.vehicle.model_name}` : '—'}</td>
+                <td>${p.temperature_c}°C</td>
+                <td>${p.range_degradation_pct != null ? p.range_degradation_pct.toFixed(1) + '%' : '—'}</td>
+                <td>${p.predicted_range_km != null ? Math.round(p.predicted_range_km) + ' km' : '—'}</td>
+                <td>${p.ml_model_used || '—'}</td>
+                <td>
+                    <button class="btn btn-outline btn-sm" data-saved="${p.is_saved}" onclick="toggleSave(${p.id}, this)">
+                        ${p.is_saved ? '✅ Saved' : '🔖 Save'}
+                    </button>
+                </td>
+            </tr>`).join('');
+        el.innerHTML = `<table><thead><tr><th>Date</th><th>Vehicle</th><th>Temp</th><th>Degradation</th><th>Predicted Range</th><th>Model</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', loadHistory);
+</script>
+{% endblock %}

@@ -67,6 +67,11 @@
 
     <div class="card animate-fade" style="margin-top:20px;">
         <div class="card-header"><h3 class="card-title">🔔 Notification Preferences</h3></div>
+        <p style="font-size:12px;color:var(--text-muted);">
+            Low battery, battery health, charging, and maintenance alerts have moved to a dedicated
+            <a href="{{ url_for('notifications.preferences_page') }}">Notification Preferences</a> page.
+            The two settings below are specific to this account (not tied to any vehicle or trip).
+        </p>
         <form method="POST" action="{{ url_for('auth.update_notification_preferences') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-group">

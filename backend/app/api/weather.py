@@ -152,6 +152,8 @@ def get_current_weather():
             weather_condition=weather.get('weather_condition'),
             precipitation=weather.get('precipitation'),
             severity=weather.get('severity'),
+            data_source=weather.get('data_source'),
+            error_note=weather.get('note'),
         )
         db.session.add(log)
         db.session.commit()

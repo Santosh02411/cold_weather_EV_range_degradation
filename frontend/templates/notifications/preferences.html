@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Notification Preferences — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}⚙️ Notification Preferences{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+        For Severe Weather Alerts, see <a href="{{ url_for('alerts.index') }}">Cold Snap Alerts</a> — it has its
+        own per-location subscriptions rather than a single on/off switch.
+    </p>
+
+    <div id="statusBanner"></div>
+
+    <form id="prefsForm">
+        <div class="card" id="low-battery" style="margin-bottom:16px;">
+            <div class="card-header"><h3 class="card-title">🔋 Low Battery Alerts</h3></div>
+            <p style="font-size:12px;color:var(--text-muted);">Notified when a simulated trip's estimated arrival battery drops to or below your threshold.</p>
+            <label class="form-check"><input type="checkbox" id="low_battery_alerts_enabled"> <span style="font-size:13px;">Enabled</span></label>
+            <div class="form-group" style="margin-top:8px;max-width:220px;">
+                <label class="form-label">Alert threshold (%)</label>
+                <input type="number" id="low_battery_threshold_pct" class="form-control" min="0" max="100" step="1">
+            </div>
+        </div>
+
+        <div class="card" id="battery-health" style="margin-bottom:16px;">
+            <div class="card-header"><h3 class="card-title">⚠️ Battery Health Warning</h3></div>
+            <p style="font-size:12px;color:var(--text-muted);">Notified when a logged State of Health (SOH) reading drops to or below your threshold.</p>
+            <label class="form-check"><input type="checkbox" id="battery_health_warnings_enabled"> <span style="font-size:13px;">Enabled</span></label>
+            <div class="form-group" style="margin-top:8px;max-width:220px;">
+                <label class="form-label">Warning threshold (SOH %)</label>
+                <input type="number" id="battery_health_threshold_pct" class="form-control" min="0" max="100" step="1">
+            </div>
+        </div>
+
+        <div class="card" id="charging" style="margin-bottom:16px;">
+            <div class="card-header"><h3 class="card-title">⚡ Charging Reminder</h3></div>
+            <p style="font-size:12px;color:var(--text-muted);">Notified ahead of your planned charging stops (see Charging Reservations).</p>
+            <label class="form-check"><input type="checkbox" id="charging_reminders_enabled"> <span style="font-size:13px;">Enabled</span></label>
+            <div class="form-group" style="margin-top:8px;max-width:220px;">
+                <label class="form-label">Remind me (minutes before)</label>
+                <input type="number" id="charging_reminder_lead_minutes" class="form-control" min="5" max="1440" step="5">
+            </div>
+        </div>
+
+        <div class="card" id="maintenance" style="margin-bottom:16px;">
+            <div class="card-header"><h3 class="card-title">🔧 Maintenance Reminder</h3></div>
+            <p style="font-size:12px;color:var(--text-muted);">
+                Compares your latest logged odometer reading (via Battery Health logging) against a service
+                interval. Set a baseline below to turn this on.
+            </p>
+            <label class="form-check"><input type="checkbox" id="maintenance_reminders_enabled"> <span style="font-size:13px;">Enabled</span></label>
+            <div class="form-row" style="margin-top:8px;">
+                <div class="form-group" style="max-width:220px;">
+                    <label class="form-label">Interval (km)</label>
+                    <input type="number" id="maintenance_interval_km" class="form-control" min="500" step="500">
+                </div>
+                <div class="form-group" style="max-width:260px;">
+                    <label class="form-label">Last service baseline</label>
+                    <div id="lastServiceLabel" style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">Not set</div>
+                    <div style="display:flex;gap:6px;">
+                        <input type="number" id="markServicedOdometer" class="form-control" placeholder="Current odometer (km)" min="0">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="markServiced()">Mark serviced</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" id="email" style="margin-bottom:16px;">
+            <div class="card-header"><h3 class="card-title">📧 Email Notifications</h3></div>
+            <p style="font-size:12px;color:var(--text-muted);">Master switch for all notification emails above (cold-snap and new-device-login emails have their own separate settings on your <a href="{{ url_for('auth.profile') }}">Profile</a> page).</p>
+            <label class="form-check"><input type="checkbox" id="email_notifications_enabled"> <span style="font-size:13px;">Enabled</span></label>
+        </div>
+
+        <div class="card" id="push" style="margin-bottom:16px;">
+            <div class="card-header"><h3 class="card-title">📱 Push Notifications</h3></div>
+            <p style="font-size:12px;color:var(--text-muted);">
+                Browser notifications while this app is open in a tab. This does <em>not</em> use a service worker,
+                so it can't deliver a notification once the tab is closed — that would need real push
+                infrastructure this app doesn't have yet.
+            </p>
+            <label class="form-check"><input type="checkbox" id="push_notifications_enabled" onchange="handlePushToggle(this)"> <span style="font-size:13px;">Enabled</span></label>
+            <p id="pushPermissionNote" style="font-size:11px;color:var(--text-muted);margin-top:6px;"></p>
+        </div>
+
+        <div class="card" id="in-app" style="margin-bottom:16px;">
+            <div class="card-header"><h3 class="card-title">🔔 In-App Notifications</h3></div>
+            <p style="font-size:12px;color:var(--text-muted);">Master switch for whether any of the above create an entry in your <a href="{{ url_for('notifications.index') }}">notification center</a> at all.</p>
+            <label class="form-check"><input type="checkbox" id="in_app_notifications_enabled"> <span style="font-size:13px;">Enabled</span></label>
+        </div>
+
+        <button type="submit" class="btn btn-primary">💾 Save Preferences</button>
+    </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function showStatus(msg, type) {
+    document.getElementById('statusBanner').innerHTML = `<div class="alert alert-${type}" style="margin-bottom:14px;">${msg}</div>`;
+    setTimeout(() => { document.getElementById('statusBanner').innerHTML = ''; }, 3000);
+}
+
+async function loadPreferences() {
+    try {
+        const p = await apiFetch('/notifications/api/preferences');
+        document.getElementById('low_battery_alerts_enabled').checked = p.low_battery_alerts_enabled;
+        document.getElementById('low_battery_threshold_pct').value = p.low_battery_threshold_pct;
+        document.getElementById('battery_health_warnings_enabled').checked = p.battery_health_warnings_enabled;
+        document.getElementById('battery_health_threshold_pct').value = p.battery_health_threshold_pct;
+        document.getElementById('charging_reminders_enabled').checked = p.charging_reminders_enabled;
+        document.getElementById('charging_reminder_lead_minutes').value = p.charging_reminder_lead_minutes;
+        document.getElementById('maintenance_reminders_enabled').checked = p.maintenance_reminders_enabled;
+        document.getElementById('maintenance_interval_km').value = p.maintenance_interval_km;
+        document.getElementById('email_notifications_enabled').checked = p.email_notifications_enabled;
+        document.getElementById('push_notifications_enabled').checked = p.push_notifications_enabled;
+        document.getElementById('in_app_notifications_enabled').checked = p.in_app_notifications_enabled;
+        document.getElementById('lastServiceLabel').textContent = p.maintenance_last_service_odometer_km != null
+            ? `${p.maintenance_last_service_odometer_km} km, as of ${p.maintenance_last_service_at ? new Date(p.maintenance_last_service_at).toLocaleDateString() : '—'}`
+            : 'Not set';
+        updatePushNote();
+
+        if (window.location.hash) {
+            const el = document.querySelector(window.location.hash);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    } catch (e) { showStatus(e.message, 'danger'); }
+}
+
+function updatePushNote() {
+    const note = document.getElementById('pushPermissionNote');
+    if (!('Notification' in window)) {
+        note.textContent = 'This browser does not support notifications.';
+    } else if (Notification.permission === 'granted') {
+        note.textContent = 'Browser notification permission granted.';
+    } else if (Notification.permission === 'denied') {
+        note.textContent = 'Browser notification permission was denied — enable it in your browser\'s site settings to use this.';
+    } else {
+        note.textContent = 'You\'ll be asked to allow browser notifications when you enable this.';
+    }
+}
+
+function handlePushToggle(checkbox) {
+    if (checkbox.checked && 'Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().then(() => updatePushNote());
+    } else {
+        updatePushNote();
+    }
+}
+
+async function markServiced() {
+    const odometer = document.getElementById('markServicedOdometer').value;
+    if (!odometer) { showStatus('Enter your current odometer reading first.', 'danger'); return; }
+    try {
+        const p = await apiFetch('/notifications/api/maintenance/mark-serviced', {
+            method: 'POST', body: JSON.stringify({ odometer_km: parseFloat(odometer) }),
+        });
+        document.getElementById('lastServiceLabel').textContent = `${p.maintenance_last_service_odometer_km} km, as of ${new Date(p.maintenance_last_service_at).toLocaleDateString()}`;
+        document.getElementById('markServicedOdometer').value = '';
+        showStatus('Maintenance baseline updated.', 'success');
+    } catch (e) { showStatus(e.message, 'danger'); }
+}
+
+document.getElementById('prefsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+        await apiFetch('/notifications/api/preferences', {
+            method: 'POST',
+            body: JSON.stringify({
+                low_battery_alerts_enabled: document.getElementById('low_battery_alerts_enabled').checked,
+                low_battery_threshold_pct: parseFloat(document.getElementById('low_battery_threshold_pct').value),
+                battery_health_warnings_enabled: document.getElementById('battery_health_warnings_enabled').checked,
+                battery_health_threshold_pct: parseFloat(document.getElementById('battery_health_threshold_pct').value),
+                charging_reminders_enabled: document.getElementById('charging_reminders_enabled').checked,
+                charging_reminder_lead_minutes: parseInt(document.getElementById('charging_reminder_lead_minutes').value),
+                maintenance_reminders_enabled: document.getElementById('maintenance_reminders_enabled').checked,
+                maintenance_interval_km: parseFloat(document.getElementById('maintenance_interval_km').value),
+                email_notifications_enabled: document.getElementById('email_notifications_enabled').checked,
+                push_notifications_enabled: document.getElementById('push_notifications_enabled').checked,
+                in_app_notifications_enabled: document.getElementById('in_app_notifications_enabled').checked,
+            }),
+        });
+        showStatus('Preferences saved.', 'success');
+    } catch (e) { showStatus(e.message, 'danger'); }
+});
+
+document.addEventListener('DOMContentLoaded', loadPreferences);
+</script>
+{% endblock %}

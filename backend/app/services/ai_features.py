@@ -58,7 +58,7 @@ def _facts_block(prediction, vehicle, explanation):
 
 
 def _template_briefing(prediction, vehicle, explanation):
-    """Fallback used when no ANTHROPIC_API_KEY is configured. Reuses the
+    """Fallback used when no GEMINI_API_KEY is configured. Reuses the
     same rule-based explanation summary xai.py already produces rather
     than inventing separate fallback copy."""
     deg = prediction.get('range_degradation_pct', 0)
@@ -68,7 +68,7 @@ def _template_briefing(prediction, vehicle, explanation):
         f"In today's conditions ({prediction.get('temperature_c')}°C), your "
         f"{vehicle.get('manufacturer')} {vehicle.get('model_name')} is predicted to lose "
         f"about {deg}% of its rated range, giving roughly {rng} km of usable range. {summary} "
-        f"(Generated from the prediction model directly — set ANTHROPIC_API_KEY for a "
+        f"(Generated from the prediction model directly — set GEMINI_API_KEY for a "
         f"more natural-language briefing.)"
     )
 
@@ -89,7 +89,7 @@ def generate_trip_briefing(app_config, prediction, vehicle, explanation):
         "and give one practical, general cold-weather EV tip (e.g. preconditioning "
         "while plugged in) if genuinely relevant to these conditions."
     )
-    text, error = llm.call_claude(app_config, system, user_msg, max_tokens=400)
+    text, error = llm.call_gemini(app_config, system, user_msg, max_tokens=400)
     if error:
         fallback = _template_briefing(prediction, vehicle, explanation)
         return fallback + f" [LLM unavailable: {error}]", 'template'
@@ -106,7 +106,7 @@ def _template_answer(question, prediction, explanation):
         f"predicted degradation is {prediction.get('range_degradation_pct')}% "
         f"at {prediction.get('temperature_c')}°C. "
         + (explanation.get('summary', '') if explanation else '')
-        + " (Set ANTHROPIC_API_KEY for a conversational assistant that can answer "
+        + " (Set GEMINI_API_KEY for a conversational assistant that can answer "
         "free-form questions about this prediction.)"
     )
 
@@ -130,7 +130,7 @@ def answer_question(app_config, prediction, vehicle, explanation, question):
         "asking about this prediction."
     )
     user_msg = f"Here are the facts for this prediction:\n\n{facts}\n\nDriver's question: {question.strip()}"
-    text, error = llm.call_claude(app_config, system, user_msg, max_tokens=350)
+    text, error = llm.call_gemini(app_config, system, user_msg, max_tokens=350)
     if error:
         return _template_answer(question, prediction, explanation) + f" [LLM unavailable: {error}]", 'template'
     return text, 'llm'
@@ -203,7 +203,7 @@ def narrate_anomaly(app_config, anomaly, prediction, explanation):
         "\n\nIn 2-3 sentences, explain to the driver why this prediction is unusual, "
         "using only the facts above (don't invent additional causes)."
     )
-    text, error = llm.call_claude(app_config, system, user_msg, max_tokens=250)
+    text, error = llm.call_gemini(app_config, system, user_msg, max_tokens=250)
     if error:
         return _template_anomaly_note(anomaly, prediction) + f" [LLM unavailable: {error}]", 'template'
     return text, 'llm'

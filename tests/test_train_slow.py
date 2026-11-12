@@ -110,3 +110,80 @@ def test_rollback_produces_identical_prediction_to_original_version():
         # test setup bug (e.g. accidentally training the same data twice).
         assert result_v1['range_degradation_pct'] != result_v2['range_degradation_pct']
     _with_temp_models_dir(_run)
+
+
+def test_train_all_models_includes_new_model_families():
+    """Phase 2 ML feature expansion: LightGBM, CatBoost, a neural
+    network, and a stacking ensemble all actually train and produce
+    metrics -- not just present in the registry (see
+    test_automl_registry.py for that structural check)."""
+    def _run(temp_dir):
+        meta = train.train_all_models(n_samples=1000)
+        for name in ('neural_network', 'stacking_ensemble'):
+            assert name in meta['metrics'], f"{name} missing from metrics -- did it fail to train? errors: {meta.get('training_errors')}"
+        if train.HAS_LIGHTGBM:
+            assert 'lightgbm' in meta['metrics']
+        if train.HAS_CATBOOST:
+            assert 'catboost' in meta['metrics']
+        assert meta['training_errors'] == {}
+    _with_temp_models_dir(_run)
+
+
+def test_train_all_models_records_feature_selection_and_drift_baseline():
+    def _run(temp_dir):
+        meta = train.train_all_models(n_samples=1000)
+        fs = meta['feature_selection']
+        assert fs is not None
+        assert len(fs['selected_features']) > 0
+        assert 'physics_baseline_degradation' in fs['selected_features']
+
+        baseline = meta['feature_distribution_baseline']
+        assert 'temperature_c' in baseline
+        assert 'wind_chill_index' in baseline  # engineered feature included too
+    _with_temp_models_dir(_run)
+
+
+def test_recommended_model_is_the_lowest_test_mae_model():
+    def _run(temp_dir):
+        meta = train.train_all_models(n_samples=1000)
+        best_name = meta['recommended_model']
+        best_mae = meta['metrics'][best_name]['held_out_test_set']['mae']
+        for name, m in meta['metrics'].items():
+            assert m['held_out_test_set']['mae'] >= best_mae - 1e-9
+    _with_temp_models_dir(_run)
+
+
+def test_run_automl_tunes_and_records_best_params():
+    """AutoML: hyperparameter tuning actually runs (small n_iter/cv for
+    test speed) and records per-model best params/search CV MAE for
+    every tunable model family."""
+    def _run(temp_dir):
+        meta = train.run_automl(n_samples=800, tuning_n_iter=2, tuning_cv=2)
+        assert meta['hyperparameter_tuning_used'] is True
+        assert meta['automl_run'] is True
+        rf_report = meta['metrics']['random_forest']['hyperparameter_tuning']
+        assert rf_report is not None
+        assert 'best_params' in rf_report
+        assert 'search_cv_mae' in rf_report
+        # linear_regression has no param_distributions -- should not be tuned
+        assert meta['metrics']['linear_regression']['hyperparameter_tuning'] is None
+    _with_temp_models_dir(_run)
+
+
+def test_predict_confidence_excludes_stacking_ensemble_from_its_own_score():
+    """The stacking ensemble is built FROM the other base models, so
+    folding its own prediction into the ensemble-agreement confidence
+    score would be circular. Selecting it as model_name should still
+    produce a valid confidence score computed from the independent
+    base models only."""
+    def _run(temp_dir):
+        train.train_all_models(n_samples=1000)
+        features = {
+            'temperature_c': -15, 'humidity': 70, 'wind_speed_kmh': 20, 'precipitation': 'snow',
+            'battery_percentage': 80, 'vehicle_speed_kmh': 90, 'hvac_usage': True, 'terrain_type': 'hilly',
+            'battery_age_years': 2, 'battery_capacity_kwh': 75, 'epa_range_km': 400, 'vehicle_weight_kg': 1900,
+        }
+        result = predict.get_prediction(features, model_name='stacking_ensemble')
+        assert 0 <= result['range_degradation_pct'] <= 65
+        assert 0 <= result['confidence'] <= 1
+    _with_temp_models_dir(_run)

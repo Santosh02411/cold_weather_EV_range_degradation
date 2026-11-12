@@ -50,9 +50,11 @@ def test_colder_temperature_means_more_degradation_on_average():
 
 
 def test_baseline_trip_conditions_has_all_required_keys():
+    fe = load_app_module('app.ml.feature_engineering')
+    skip = {'temperature_c', 'physics_baseline_degradation'} | set(fe.ENGINEERED_FEATURE_COLS)
     for col in train.FEATURE_COLS:
-        if col in ('temperature_c', 'physics_baseline_degradation'):
-            continue  # set per-row during the calibration check itself
+        if col in skip:
+            continue  # set per-row (physics baseline) or computed (engineered features)
         assert col in train.BASELINE_TRIP_CONDITIONS, f"Missing {col} in BASELINE_TRIP_CONDITIONS"
 
 

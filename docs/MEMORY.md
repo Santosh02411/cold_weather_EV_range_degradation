@@ -555,3 +555,430 @@ any of Phase 1's calibration work against the new combined output.
 Keeping it as a separate, clearly-labeled estimate avoids
 contaminating a more rigorously grounded number with a less rigorous
 one.
+
+---
+
+## Phase 6 — User Dashboard (sidebar hub)
+
+**Decision: "Saved Predictions" is a new bookmark table
+(`SavedPrediction`), not a repurposing of `share_token`.**
+Why: `share_token` (UX-5) answers "can a stranger view this without
+logging in" -- an orthogonal concern to "do I personally want this
+pinned for quick reference." Overloading share-token-is-set to also
+mean "saved" would make revoking a share link accidentally unsave a
+prediction the user still wanted bookmarked, and vice versa. A
+separate join table, same shape as `FavoriteVehicle`
+(`vehicle_interactions.py`), keeps the two concerns independent and
+matches this project's existing "one small join table per interaction"
+pattern instead of inventing a second one.
+
+**Decision: "Saved Vehicles" in the sidebar is backed by the existing
+`RecentlyViewedVehicle` table, not a new model.**
+Why: `EVVehicle` has no per-user ownership column (it's a shared
+catalog, not a garage), so "saved" can't mean "vehicles I added."
+`RecentlyViewedVehicle` was already the only other real per-user
+vehicle-interaction table besides favorites, already auto-populated by
+`record_view()`, and already capped at 20 entries. Renaming its
+surfaced label to "Saved Vehicles" (with a one-line explanation on the
+page itself, and a link over to Favorites for anything meant to stick
+around) was more honest than inventing a second, functionally
+identical bookmarking table that would just duplicate
+`SavedPrediction`'s job for a different model.
+
+**Decision: Recent Activity is a merged read across five existing
+tables (`recent_activity()` in `services/analytics.py`), not a new
+`ActivityLog` table written on every user action.**
+Why: an `ActivityLog` table would need a write hook added to every
+existing action (predict, simulate trip, favorite, save, generate
+report) -- more surface area for the log to silently drift out of sync
+with what actually happened, for a feature that's read far more rarely
+than it would be written. Every one of those actions already has its
+own authoritative row in its own table; merging five small
+`user_id`-scoped queries at read time is slower per-request but can
+never desync from the real data, and needed zero changes to any
+existing write path. Revisit only if this feed needs to show action
+types that don't already have a backing table of their own.
+
+**Decision: the "User Dashboard" sidebar section links out to
+existing feature pages (Reports, the vehicle catalog's favorites
+filter) rather than cloning their data into new dashboard-only views.**
+Why: Report History (`reports/index.html`) and the favorites/recently-
+viewed data were already fully built, tested surfaces. A second copy
+of the same table on a new page would be one more place for the two
+to drift out of sync (same "one shared implementation, not a second
+copy" convention `feature_engineering.py` already documents) --
+Favorite Vehicles got its own thin page anyway since the catalog page
+buries it behind a filter checkbox, but Saved Reports links straight
+to the existing Reports page rather than re-rendering its history
+table a second time.
+
+---
+
+## Phase 7 — Admin Dashboard (sidebar hub)
+
+**Decision: "Feedback Management" moderates `CommunityRangeReport` via
+its existing `is_flagged` column, rather than a new feedback/bug-report
+system.** Why: there was no other "feedback" concept anywhere in this
+app to build a UI for -- but `is_flagged` on community reports has
+existed since FEAT-4 specifically so a moderation feature could be
+added without a schema change, and it was never actually wired to
+anything. `community.list_reports()` already excludes flagged reports
+from the public feed, and the recalibration pipeline already excludes
+them from retraining data -- so this UI activates two enforcement
+paths that were already live and silently waiting for an admin control
+surface, rather than adding a new one.
+
+**Decision: "System Logs" merges `LoginHistory` (already written on
+every login attempt) with the live-retrain drift-check history, read
+at request time -- no new `SystemLog`/audit table.** Same reasoning as
+Phase 6's `recent_activity()`: every event surfaced here already has
+its own authoritative row for its own reason (security audit trail,
+drift monitoring), so merging at read time can't drift out of sync
+with what actually happened, and needed zero new write hooks.
+
+**Decision: "Weather API Monitoring" required two new nullable columns
+on `WeatherLog` (`data_source`, `error_note`)**, unlike every other
+Admin Dashboard page. Why: this is the one case where the data
+literally didn't exist anywhere yet -- `get_current_weather()` already
+computed live-vs-demo-fallback status transiently per-request but
+never persisted it, so there was nothing to aggregate retroactively.
+Both columns are nullable specifically so older `WeatherLog` rows
+(from before this phase) don't need a backfill -- they just show as
+"unknown" source, which the admin page states plainly rather than
+guessing.
+
+**Decision: "Analytics Dashboard" is a new page over the existing
+`/admin/api/fleet-stats` endpoint (already used by the panel's
+embedded Fleet Dashboard section), not a new data source.** "Prediction
+Statistics" (the existing `/admin/analytics` -- per-model accuracy,
+daily prediction counts) and "Analytics Dashboard" (whole-app usage:
+users, vehicles, trips, community reports, top users) were kept as two
+separate sidebar links because they answer different questions, but
+both reuse data that already existed rather than each computing their
+own copy.
+
+**Decision: "Vehicle Management" and "Report Management" are
+admin-wide *views* over existing per-user-scoped data, not new write
+paths.** Vehicle Management surfaces `is_active=False` vehicles (the
+public catalog always filters them out, and there was previously no
+way to see -- or undo -- a soft-delete). Report Management shows every
+user's `ReportSchedule`/`ReportHistory` rows, read-only; editing a
+schedule stays the owner's action from their own Reports page, exactly
+like Phase 6 kept Saved Reports pointed at the existing per-user
+Reports page instead of cloning it.
+
+---
+
+## Phase 8 — Notifications (sidebar hub)
+
+**Decision: Severe Weather Alerts has NO toggle in the new
+`NotificationPreference` table.** It already has its own dedicated,
+richer subscription model (`AlertSubscription`: per-location,
+per-threshold, multiple subscriptions per user, own scheduler job)
+from FEAT-3. A single boolean here would be strictly worse than what
+already exists, so the sidebar item just links straight to the
+existing `/alerts` page instead of duplicating a weaker version of it.
+
+**Decision: Low Battery Alerts and Battery Health Warning are checked
+synchronously (right when a trip is simulated / a SOH reading is
+logged), not on a scheduler tick.** Both need data that's only computed
+once, right at that moment (`estimated_arrival_battery_pct`, a new
+`soh_pct` reading) -- there's no ongoing state to poll between then and
+now, so a periodic job would just be re-checking the same already-known
+answer. Charging Reminder and Maintenance Reminder DO need a scheduler
+job, because "is now within N minutes of an upcoming reservation" and
+"has the odometer passed the service threshold" are both time-dependent
+questions that need to be re-asked as time passes, not just once at
+write time.
+
+**Decision: Maintenance Reminder is grounded in
+`BatteryHealthRecord.odometer_km`** (the only mileage data this app
+tracks anywhere) **compared against a user-set interval + baseline**,
+not a real service-history log. This app has no concept of "vehicle
+maintenance" at all otherwise (no service records, no dealer
+integration) -- rather than inventing one, the reminder reuses data a
+user already has a reason to log (via Battery Health) and asks them to
+set one baseline (`/notifications/api/maintenance/mark-serviced`)
+before it activates. Deliberately opt-in (`maintenance_reminders_enabled`
+defaults False) since, unlike the other three alert types, it can't
+produce a meaningful answer until the user has done that one-time setup.
+
+**Decision: Push Notifications is real (uses the browser's
+`Notification` API and requests permission), but explicitly scoped to
+"while this tab is open."** True push notifications that work with the
+tab closed need a service worker + a push subscription server (VAPID
+keys, a push endpoint, background sync) -- infrastructure this project
+doesn't have and that's out of scope to bootstrap for one toggle. The
+preferences page says this outright rather than implying more than
+what's actually implemented, same as `charging_reservation.py`'s
+docstring being upfront that reservations aren't real bookings with any
+charging network.
+
+**Decision: Email Notifications' master switch stays on `User`
+(`email_notifications_enabled`, pre-existing) rather than being
+duplicated onto `NotificationPreference`.** `NotificationPreference.to_dict()`
+reads it through the relationship so the API still returns one flat
+preferences object; the notification-type-specific toggles (which
+notifications are even eligible to email) live on
+`NotificationPreference`, and the single account-wide on/off switch
+stays exactly where it already was. `profile.html`'s existing
+notification form was trimmed to just the two things that are genuinely
+account-level (email master switch, new-device security alerts) and now
+points to `/notifications/preferences` for everything else, rather than
+forking the same settings across two pages.
+
+---
+
+## Phase 9 — Cost Analysis (sidebar hub)
+
+**Decision: Electricity Price Integration is a regional-average lookup
+table + a per-user saved-rate override, NOT a live utility-rate API.**
+There's no free public API for residential electricity pricing the
+way OpenWeatherMap exists for weather -- so, same honesty convention
+as `charging_cost.py`'s `DEFAULT_RATES_USD_PER_KWH`,
+`services/electricity_rates.py` is an explicitly-labeled table of
+documented averages a user can pick from to prefill their own rate,
+never presented as their actual bill. Every other Cost Analysis
+feature reads through one resolver
+(`services/cost_preferences.py::get_effective_rates()`) so "what rate
+did this calculation use" always has one answer, and every result
+labels whether it came from the user's own saved rate or a default.
+
+**Decision: EV vs Petrol Cost Comparison, Ownership Cost Analysis, and
+Savings Calculator share ONE engine
+(`services/fuel_cost.py::compare_ev_vs_petrol()`).** They differ only
+in which extra inputs get layered on top (purchase price + maintenance
+for Ownership; an optional price premium + payback period for
+Savings) and how the result is framed -- not in the underlying
+cost-per-km math. Petrol-side defaults (price/liter, L/100km, annual
+km) are documented generic estimates, explicitly not a specific
+make/model, since this app has no petrol vehicle catalog and no live
+fuel-price feed to draw real ones from.
+
+**Decision: Ownership Cost Analysis defaults the EV purchase price
+from `EVVehicle.price_usd` where set, but has NO default for the
+petrol side.** The vehicle catalog already carries an (unverified,
+nullable) approximate MSRP for exactly this kind of estimate; there's
+no equivalent petrol-car catalog to draw a default from, so the result
+says outright when a purchase-price comparison couldn't be completed
+rather than silently comparing running costs alone as if that were the
+whole picture.
+
+**Decision: Charging Cost History (`ChargingSession`, a real logged
+ledger) is a SEPARATE feature from Monthly Charging Cost
+(`analytics_service.cost_analytics()`, which projects spend from
+*simulated* trip energy).** Conflating "what you told us you actually
+paid" with "what your simulated driving would cost" would misrepresent
+one as the other. Both pages say explicitly which kind of number
+they're showing and link to the other. A session's cost can be left
+blank and auto-estimated from the user's saved rate (flagged
+`is_cost_estimated: true`) rather than forcing manual entry for every
+log, but a user-entered figure is never overwritten by an estimate.
+
+---
+
+## Phase 10 — Sustainability (sidebar hub)
+
+**Decision: CO2 Savings Calculator / Carbon Footprint Analysis / Fuel
+Savings / Environmental Impact Dashboard share one engine
+(`services/emissions.py`), mirroring Phase 9's `fuel_cost.py`
+pattern exactly.** Grid carbon intensity and petrol consumption/annual
+distance are resolved through the SAME `services/cost_preferences.py`
+resolver Cost Analysis uses, rather than a second copy of those
+numbers -- a user's comparison petrol car is one car across both
+feature areas, not two different assumed cars living in two different
+preference tables.
+
+**Decision: grid carbon intensity is a documented regional-average
+lookup table (`services/grid_intensity.py`), keyed by the SAME region
+keys as `services/electricity_rates.py`, and picking a region on the
+Electricity Price Integration page now sets both together.** Same
+honesty convention as electricity pricing: there's no live grid-carbon
+API wired in (real ones like electricityMaps/WattTime need a paid
+account this project doesn't have), so every figure is a labeled
+starting estimate, never presented as a live reading of the actual
+grid mix at that moment. Unifying the region picker avoids asking the
+user "which grid region are you in" twice for what is, physically, the
+same answer.
+
+**Decision: the petrol combustion emission factor
+(`PETROL_KG_CO2_PER_LITER = 2.31`) is treated differently from the
+grid-intensity/rate estimates -- it's a physical constant (burning a
+liter of gasoline releases a fixed mass of CO2 via combustion
+chemistry, not a regional average), so it isn't user-overridable the
+way grid intensity and electricity rates are.** Documented inline in
+`grid_intensity.py` as a combustion-chemistry-sourced figure, not
+grouped with the "estimate, confirm or override" language used for
+everything genuinely regional.
+
+**Decision: Fuel Savings (liters of petrol not burned) is kept
+separate from Cost Analysis's dollar-denominated Savings Calculator
+(Phase 9), even though both use the same underlying driving
+assumptions.** A physical-volume number and a dollar number answer
+different questions and shouldn't be collapsed into one page just
+because they share inputs -- same reasoning as Phase 9 keeping
+Charging Cost History separate from Monthly Charging Cost.
+
+**Decision: Green Driving Score is a 0-100 translation of the
+already-existing `services/driving_style.py::analyze_driving_style()`**
+(real recorded speeds from a user's own predictions/trip simulations),
+**not a new metric computed from different data.** `analyze_driving_style()`
+already classified eco/moderate/aggressive with a documented,
+threshold-based rationale; `green_driving_score()` adds a base score
+per style plus a consistency penalty (speed std-dev), reusing the
+exact same "insufficient_data" graceful fallback rather than inventing
+a second insufficient-data path. No live telemetry exists in this app
+(only what a user types into a prediction/trip form), and the
+score/UI say so.
+
+**Decision: Environmental Impact Dashboard's all-time totals are
+computed directly against `TripSimulation`, NOT by calling
+`footprint_analytics()` with an 'all' period.** `footprint_analytics()`
+only supports `daily`/`weekly`/`monthly` bucketing (inherited from
+`analytics.py`'s shared `_validate_period()`); a caught-before-ship bug
+in this phase tried passing `period='all'` through it, which would
+have raised `ValueError` on first real use. The all-time summary
+queries `TripSimulation` directly instead.
+
+---
+
+## Local dev environment fixes (schema drift / venv / email)
+
+**`scripts/reset_dev_db.py` added.** A local SQLite dev DB created by
+`db.create_all()` before a later phase added new columns will throw
+`sqlite3.OperationalError: no such column: ...` on almost any request
+that touches the affected table (since `users` gets touched by
+login/register/forgot-password, this can look like "the whole app is
+broken"). `create_all()` never alters an existing table, only creates
+missing ones -- there was no self-service fix for this beyond manually
+deleting the `.db` file or setting up Flask-Migrate from scratch. The
+new script drops and recreates every table (destructive, dev-only,
+requires typed confirmation unless `--yes` is passed) and is
+documented in the README's Database Migrations section as the fast
+path for a no-data-to-lose local dev database, with the proper
+Flask-Migrate path still documented as the right approach when real
+data needs to survive.
+
+**README gained a Virtual Environment step (new step 2 of Quick
+Start)** with copy-pasteable activation commands for PowerShell,
+cmd.exe, and bash, plus the PowerShell execution-policy fix most
+Windows users hit on first activation (`Set-ExecutionPolicy
+-ExecutionPolicy RemoteSigned -Scope CurrentUser`).
+
+**README's email section rewritten as a full step-by-step Gmail App
+Password walkthrough**, not just a one-line mention. The actual code
+path (`services/auth_email.py::_send_or_log()`) was already correct --
+it fails soft and logs `[EMAIL-WOULD-SEND] (MAIL_USERNAME/PASSWORD not
+configured) ...` rather than erroring when mail isn't configured, by
+design (same as `services/alerts.py`'s FEAT-3 pattern). "I never
+received the email" was, in the reported case, actually two separate
+issues stacking: (1) the schema-drift `OperationalError` above was
+crashing forgot-password before it ever reached the email-sending
+code at all, and (2) Gmail requires an App Password (2-Step
+Verification must be on first) -- a plain account password silently
+fails Gmail's SMTP auth. The README now calls out that these are
+separate problems and fixing one doesn't fix the other.
+
+---
+
+## LLM provider swap — Anthropic → Gemini (free tier)
+
+Phase 3's `services/llm.py` originally called Anthropic's Messages API.
+Switched to Google's Gemini `generateContent` REST API on request,
+specifically so the AI Trip Briefing / Q&A / anomaly-narration features
+(`services/ai_features.py`) work entirely on a free-tier key with no
+billing account required (`GEMINI_API_KEY` from
+https://aistudio.google.com/apikey, default model `gemini-flash-latest`
+-- Google's own auto-updating alias, not a dated model ID; see the
+follow-up entry below for why).
+
+**What changed:** `llm.py`'s request/response shape (Gemini's
+`system_instruction`/`contents` request fields and
+`candidates[0].content.parts[].text` response shape, replacing
+Anthropic's `system`/`messages`/`content` blocks; `call_gemini()`
+replacing `call_claude()`), `config.py`'s `GEMINI_API_KEY`/`GEMINI_MODEL`
+(replacing `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL`), `.env.example`, and
+every doc/README reference.
+
+**What didn't change:** `services/ai_features.py`'s public behavior,
+grounding rules, and template-fallback content are untouched -- only
+the one line in each function calling `llm.call_gemini()` instead of
+`llm.call_claude()`. `is_configured()` and the `(text, error)` return
+contract are identical, so this was a swap at the `llm.py` boundary
+only, not a rewrite of Phase 3's actual AI-feature logic.
+
+Same verification caveat as the original Anthropic integration: written
+against Gemini's documented API shape but not executed against the live
+internet in this sandbox (no outbound network here) -- test with a real
+`GEMINI_API_KEY` before relying on it. See `docs/PROJECT_WORKFLOW.md`
+"Later update" entry and `docs/TECHNICAL_ARCHITECTURE.md` §6.1 for more.
+
+---
+
+## Follow-up — `gemini-2.0-flash` retired mid-use, switched to an auto-updating alias
+
+The Gemini swap above originally defaulted `GEMINI_MODEL` to
+`gemini-2.0-flash`. That model was shut down (June 1, 2026) and started
+returning `404: This model models/gemini-2.0-flash is no longer
+available` -- confirmed as a real, reported failure in production use,
+not a hypothetical.
+
+**Decision: default `GEMINI_MODEL` to `gemini-flash-latest` (Google's
+own alias), not another dated model ID.** Research into Google's 2026
+deprecation pattern found this isn't a one-time fluke: `gemini-2.5-flash`
+and `gemini-2.5-flash-lite` also started 404'ing in July 2026, *weeks*
+before their own officially published October 16, 2026 shutdown date
+(confirmed on Google's own developer forum). Pinning to any specific
+dated Flash model ID in this app would very likely break again on a
+similar timeline. `gemini-flash-latest` is Google's own documented alias
+that always points at whatever Flash-tier (free) model they currently
+recommend (as of this writing, GA `gemini-3.5-flash`) -- using it is the
+only approach that doesn't require another manual fix each time Google
+rotates models.
+
+**Decision: `call_gemini()` also retries a short fallback list
+(`FALLBACK_MODELS` in `services/llm.py`) if the configured model comes
+back "not found"/"no longer available", before giving up and falling
+back to template text.** Belt-and-suspenders on top of the alias, in
+case the alias itself is ever slow to update or a specific
+`GEMINI_MODEL` override goes stale. A real API failure (bad key,
+network error, safety block) does NOT trigger the fallback retry --
+only a model-not-found-style error does, so this can't mask a
+genuinely broken key behind a misleading "it worked on the second try"
+kind of silence.
+
+---
+
+## Sidebar reorganization — collapsible sections + live search
+
+With 8 nav sections and ~53 individual links accumulated across
+Phases 6-10, a flat always-expanded sidebar had become genuinely hard
+to scroll/scan (reported directly). Two changes, both in
+`base.html`/`style.css`/`main.js`, no backend changes:
+
+**Collapsible sections**, state remembered per-browser via
+`localStorage` (`navSectionState`), not a new backend preference --
+this is pure UI chrome, not something that needs to sync across
+devices or be queryable, so a server-side model would have been the
+wrong tool. Defaults: `Main`, `Analysis`, and `Data` (the original,
+smaller, most-frequently-used sections) start expanded; the four large
+Phase 6-10 sections (`User Dashboard`, `Notifications`, `Cost
+Analysis`, `Sustainability`) and `Admin Dashboard` start collapsed.
+Whichever section contains the page you're currently on is always
+force-expanded regardless of saved state, so collapsing everything can
+never hide where you are.
+
+**Live search** (`navSearchInput`) filters nav links by their visible
+text as you type, auto-collapsing sections with no match and
+expanding ones that do -- restores each section's exact prior
+collapsed/expanded state when the search is cleared, rather than
+leaving everything expanded afterward.
+
+No new routes, models, or tests needed -- this is client-side
+filtering over content the server already sends; verified by rendering
+`dashboard.index` through the real Flask app (both as an admin and a
+regular user, confirming Admin Dashboard is still gated correctly) and
+checking the JS parses cleanly, but the actual click/type interactions
+weren't exercised in a real browser (same standing sandbox limitation
+as every other frontend-only change in this project — see
+`docs/TECHNICAL_ARCHITECTURE.md`).

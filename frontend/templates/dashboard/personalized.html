@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}My Dashboard — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}👤 Personalized Dashboard{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 class="card-title">Welcome back, {{ current_user.full_name }}</h3></div>
+        <div class="stats-grid" id="quickStatsGrid">
+            <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">🚀 Jump to</h3></div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <a href="{{ url_for('predictions.history_page') }}" class="btn btn-outline" style="justify-content:flex-start;">🕘 Prediction History</a>
+                <a href="{{ url_for('predictions.saved_page') }}" class="btn btn-outline" style="justify-content:flex-start;">🔖 Saved Predictions</a>
+                <a href="{{ url_for('vehicles.saved_page') }}" class="btn btn-outline" style="justify-content:flex-start;">📌 Saved Vehicles</a>
+                <a href="{{ url_for('vehicles.favorites_page') }}" class="btn btn-outline" style="justify-content:flex-start;">❤️ Favorite Vehicles</a>
+                <a href="{{ url_for('reports.index') }}" class="btn btn-outline" style="justify-content:flex-start;">📄 Saved Reports</a>
+                <a href="{{ url_for('dashboard.usage_stats_page') }}" class="btn btn-outline" style="justify-content:flex-start;">📈 Usage Statistics</a>
+                <a href="{{ url_for('dashboard.activity_page') }}" class="btn btn-outline" style="justify-content:flex-start;">🕒 Recent Activity</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🕒 Recent Activity</h3>
+                <a href="{{ url_for('dashboard.activity_page') }}" class="btn btn-outline btn-sm">View all</a>
+            </div>
+            <div id="activityPreview"><p style="color:var(--text-muted);font-size:13px;">Loading…</p></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadQuickStats() {
+    const el = document.getElementById('quickStatsGrid');
+    try {
+        const s = await apiFetch('/dashboard/api/analytics/user');
+        el.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-icon purple">🤖</div>
+                <div><div class="stat-value">${s.total_predictions}</div><div class="stat-label">Predictions</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon red">❤️</div>
+                <div><div class="stat-value">${s.favorite_vehicles_count}</div><div class="stat-label">Favorite Vehicles</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon green">🔥</div>
+                <div><div class="stat-value">${s.current_activity_streak_days}</div><div class="stat-label">Day Streak</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon blue">🎯</div>
+                <div><div class="stat-value">${s.avg_confidence != null ? (s.avg_confidence * 100).toFixed(0) + '%' : '--'}</div><div class="stat-label">Avg Confidence</div></div>
+            </div>`;
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+async function loadActivityPreview() {
+    const el = document.getElementById('activityPreview');
+    try {
+        const items = await apiFetch('/dashboard/api/activity?limit=6');
+        if (!items.length) {
+            el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No activity yet — run a prediction to get started.</p>';
+            return;
+        }
+        el.innerHTML = items.map(i => `
+            <div style="display:flex;gap:10px;align-items:start;padding:8px 0;border-bottom:1px solid var(--border-color);">
+                <div style="font-size:16px;">${i.icon}</div>
+                <div style="flex:1;">
+                    <div style="font-size:13px;">${i.title}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${new Date(i.timestamp).toLocaleString()}</div>
+                </div>
+            </div>`).join('');
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', () => { loadQuickStats(); loadActivityPreview(); });
+</script>
+{% endblock %}

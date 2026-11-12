@@ -29,6 +29,18 @@ requests==2.32.3
 # for the real report this was fixed from.
 scikit-learn>=1.6.0
 xgboost>=2.1.1
+# Optional gradient-boosting families (see ml/automl.py's model
+# registry) -- app degrades gracefully if either is missing, same
+# convention as xgboost above, so these are "nice to have" not
+# strictly required for the app to run.
+lightgbm>=4.5.0
+catboost>=1.2.5
+# Explainable AI (see ml/explainability.py) -- shap is already used by
+# ml/xai.py; lime is model-agnostic (works even for the neural network
+# / stacking ensemble models shap.TreeExplainer can't handle) and is
+# likewise optional -- missing it degrades LIME-specific endpoints
+# only, same "absent package -> reported, not a crash" convention.
+lime>=0.2.0.1
 pandas>=2.2.3
 numpy>=2.1.1
 shap>=0.46.0
@@ -36,6 +48,9 @@ lime==0.2.0.1
 plotly==5.22.0
 matplotlib>=3.9.2
 reportlab==4.2.2
+# Reports phase: Excel Report Export (services/report_generation.py's
+# build_xlsx()) -- reportlab above already covers PDF.
+openpyxl>=3.1.0
 Pillow>=10.4.0
 WTForms==3.1.2
 email-validator==2.2.0

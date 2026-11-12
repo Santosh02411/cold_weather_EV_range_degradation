@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, jsonify, current_app
 from flask_login import login_required, current_user
-from ..models.prediction import Prediction
+from ..models.prediction import Prediction, SavedPrediction
 from ..models.ev_vehicle import EVVehicle
 from ..ml.predict import get_prediction, get_available_models
 from ..ml.xai import get_shap_explanation
@@ -10,12 +10,55 @@ from .. import db, limiter
 predictions_bp = Blueprint('predictions', __name__)
 
 
+def build_features_from_request(data, vehicle):
+    """Shared feature-dict construction from a request payload + a
+    vehicle record -- used by /api/predict and every /explain/api/*
+    endpoint (see api/explain.py) so they all encode a request
+    identically. Extracted here (rather than duplicated across six new
+    explainability endpoints) after the Explainable AI phase added
+    several more callers of this exact same shape.
+    """
+    return {
+        'temperature_c': float(data.get('temperature_c', 20)),
+        'humidity': float(data.get('humidity', 50)),
+        'wind_speed_kmh': float(data.get('wind_speed_kmh', 10)),
+        'precipitation': data.get('precipitation', 'none'),
+        'battery_percentage': float(data.get('battery_percentage', 100)),
+        'vehicle_speed_kmh': float(data.get('vehicle_speed_kmh', 60)),
+        'hvac_usage': bool(data.get('hvac_usage', True)),
+        'terrain_type': data.get('terrain_type', 'flat'),
+        'battery_age_years': float(data.get('battery_age_years', 0)),
+        'battery_capacity_kwh': vehicle.battery_capacity_kwh,
+        'epa_range_km': vehicle.epa_range_km,
+        'vehicle_weight_kg': vehicle.vehicle_weight_kg,
+    }
+
+
 @predictions_bp.route('/')
 @login_required
 def index():
     vehicles = EVVehicle.query.filter_by(is_active=True).all()
     models = get_available_models()
     return render_template('predictions/index.html', vehicles=vehicles, ml_models=models)
+
+
+@predictions_bp.route('/history')
+@login_required
+def history_page():
+    """Full Prediction History page. The data itself has always been
+    available via /api/history; this just gives it a real page instead
+    of being API-only.
+    """
+    return render_template('predictions/history.html')
+
+
+@predictions_bp.route('/saved')
+@login_required
+def saved_page():
+    """Saved Predictions page -- the bookmarked subset, see
+    SavedPrediction in models/prediction.py.
+    """
+    return render_template('predictions/saved.html')
 
 
 @predictions_bp.route('/api/predict', methods=['POST'])
@@ -35,20 +78,7 @@ def predict():
     if not vehicle:
         return jsonify({'error': 'Vehicle not found'}), 404
 
-    features = {
-        'temperature_c': float(data.get('temperature_c', 20)),
-        'humidity': float(data.get('humidity', 50)),
-        'wind_speed_kmh': float(data.get('wind_speed_kmh', 10)),
-        'precipitation': data.get('precipitation', 'none'),
-        'battery_percentage': float(data.get('battery_percentage', 100)),
-        'vehicle_speed_kmh': float(data.get('vehicle_speed_kmh', 60)),
-        'hvac_usage': bool(data.get('hvac_usage', True)),
-        'terrain_type': data.get('terrain_type', 'flat'),
-        'battery_age_years': float(data.get('battery_age_years', 0)),
-        'battery_capacity_kwh': vehicle.battery_capacity_kwh,
-        'epa_range_km': vehicle.epa_range_km,
-        'vehicle_weight_kg': vehicle.vehicle_weight_kg,
-    }
+    features = build_features_from_request(data, vehicle)
     model_name = data.get('ml_model', 'random_forest')
     result = get_prediction(features, model_name)
     explanation = get_shap_explanation(features, model_name)
@@ -333,9 +363,64 @@ def report_actual(prediction_id):
 @predictions_bp.route('/api/history')
 @login_required
 def history():
+    limit = min(request.args.get('limit', 50, type=int), 200)
     predictions = Prediction.query.filter_by(user_id=current_user.id)\
-        .order_by(Prediction.created_at.desc()).limit(50).all()
-    return jsonify([p.to_dict() for p in predictions])
+        .order_by(Prediction.created_at.desc()).limit(limit).all()
+    saved_ids = {
+        s.prediction_id for s in
+        SavedPrediction.query.filter_by(user_id=current_user.id).all()
+    }
+    results = []
+    for p in predictions:
+        d = p.to_dict()
+        d['vehicle'] = p.vehicle.to_dict() if p.vehicle else None
+        d['is_saved'] = p.id in saved_ids
+        results.append(d)
+    return jsonify(results)
+
+
+@predictions_bp.route('/api/saved')
+@login_required
+def list_saved():
+    """Saved Predictions -- the user's bookmarked subset, most
+    recently saved first (not most recently predicted -- this is a
+    "what did I star" list, so it sorts by the save, not the
+    underlying prediction's age).
+    """
+    saved = SavedPrediction.query.filter_by(user_id=current_user.id)\
+        .order_by(SavedPrediction.created_at.desc()).all()
+    results = []
+    for s in saved:
+        if not s.prediction:
+            continue
+        d = s.prediction.to_dict()
+        d['vehicle'] = s.prediction.vehicle.to_dict() if s.prediction.vehicle else None
+        d['is_saved'] = True
+        d['saved_at'] = s.created_at.isoformat() if s.created_at else None
+        results.append(d)
+    return jsonify(results)
+
+
+@predictions_bp.route('/api/<int:prediction_id>/save', methods=['POST'])
+@login_required
+def save_prediction(prediction_id):
+    prediction = _load_owned_prediction(prediction_id)
+    if not prediction:
+        return jsonify({'error': 'Prediction not found'}), 404
+    if not SavedPrediction.query.filter_by(user_id=current_user.id, prediction_id=prediction_id).first():
+        db.session.add(SavedPrediction(user_id=current_user.id, prediction_id=prediction_id))
+        db.session.commit()
+    return jsonify({'saved': True})
+
+
+@predictions_bp.route('/api/<int:prediction_id>/save', methods=['DELETE'])
+@login_required
+def unsave_prediction(prediction_id):
+    saved = SavedPrediction.query.filter_by(user_id=current_user.id, prediction_id=prediction_id).first()
+    if saved:
+        db.session.delete(saved)
+        db.session.commit()
+    return jsonify({'saved': False})
 
 
 @predictions_bp.route('/api/models')

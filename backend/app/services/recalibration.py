@@ -26,6 +26,7 @@ from ..models.prediction import Prediction, CommunityRangeReport
 from ..models.ev_vehicle import EVVehicle
 from ..ml.train import FEATURE_COLS, generate_synthetic_dataset, train_all_models
 from ..ml.physics import physics_baseline_degradation_pct
+from ..ml import feature_engineering as fe
 
 
 def _degradation_from_actual(reported_range_km, epa_range_km, battery_pct):
@@ -109,7 +110,13 @@ def collect_real_outcomes():
 
     if not rows:
         return pd.DataFrame(columns=FEATURE_COLS + ['range_degradation_pct', 'source'])
-    return pd.DataFrame(rows)
+    # Rows above only carry the RAW inputs -- add the same engineered
+    # interaction features (wind chill, HVAC-cold interaction, etc.)
+    # training data gets, via the same shared function, so real data
+    # lines up with FEATURE_COLS exactly like synthetic data does (see
+    # feature_engineering.py's docstring for why this is one shared
+    # function rather than a second copy of the logic).
+    return fe.engineer_features(pd.DataFrame(rows))
 
 
 def real_data_summary():

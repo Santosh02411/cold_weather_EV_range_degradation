@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Electricity Price Integration — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}⚡ Electricity Price Integration{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+        There's no live utility-rate API behind this — the regional options below are documented averages,
+        not your actual bill. Pick one to prefill, or enter your own known rate. Every cost calculator in
+        this app (Charging Cost Calculator, Monthly Charging Cost, EV vs Petrol, Ownership, Savings) uses
+        whatever is saved here as its default.
+    </p>
+
+    <div id="statusBanner"></div>
+
+    <div class="card" style="margin-bottom:16px;">
+        <div class="card-header"><h3 class="card-title">🌍 Prefill from a Regional Average</h3></div>
+        <div id="regionalGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+            <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h3 class="card-title">✏️ Your Rates</h3></div>
+        <form id="prefsForm">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Home rate ($/kWh)</label>
+                    <input type="number" id="home_rate_usd_per_kwh" class="form-control" step="0.01" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Public fast-charging rate ($/kWh)</label>
+                    <input type="number" id="public_rate_usd_per_kwh" class="form-control" step="0.01" min="0">
+                </div>
+            </div>
+            <p id="currentRegionLabel" style="font-size:12px;color:var(--text-muted);"></p>
+
+            <h4 style="font-size:13px;color:var(--text-secondary);margin:16px 0 8px;">Petrol comparison defaults (used by EV vs Petrol, Ownership, Savings)</h4>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Petrol price ($/liter)</label>
+                    <input type="number" id="petrol_price_per_liter" class="form-control" step="0.01" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Comparison car fuel use (L/100km)</label>
+                    <input type="number" id="petrol_l_per_100km" class="form-control" step="0.1" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Annual driving distance (km)</label>
+                    <input type="number" id="annual_km" class="form-control" step="100" min="0">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">💾 Save Rates</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function showStatus(msg, type) {
+    document.getElementById('statusBanner').innerHTML = `<div class="alert alert-${type}" style="margin-bottom:14px;">${msg}</div>`;
+    setTimeout(() => { document.getElementById('statusBanner').innerHTML = ''; }, 3000);
+}
+
+function fillForm(p) {
+    document.getElementById('home_rate_usd_per_kwh').value = p.home_rate_usd_per_kwh ?? '';
+    document.getElementById('public_rate_usd_per_kwh').value = p.public_rate_usd_per_kwh ?? '';
+    document.getElementById('petrol_price_per_liter').value = p.petrol_price_per_liter ?? '';
+    document.getElementById('petrol_l_per_100km').value = p.petrol_l_per_100km ?? '';
+    document.getElementById('annual_km').value = p.annual_km ?? '';
+    document.getElementById('currentRegionLabel').textContent = p.rate_region_label
+        ? `Currently using the "${p.rate_region_label}" average.`
+        : (p.home_rate_usd_per_kwh != null ? 'Using your own manually-entered rate.' : 'Using the documented default estimate (no rate saved yet).');
+}
+
+async function loadRegions() {
+    const el = document.getElementById('regionalGrid');
+    try {
+        const regions = await apiFetch('/cost/api/regional-rates');
+        el.innerHTML = regions.map(r => `
+            <button type="button" class="btn btn-outline btn-sm" style="text-align:left;" onclick="useRegion('${r.key}')">
+                ${r.label}<br><span style="font-size:11px;color:var(--text-muted);">home $${r.home}/kWh · fast $${r.public_fast}/kWh</span>
+            </button>`).join('');
+    } catch (e) { el.innerHTML = e.message; }
+}
+
+async function useRegion(key) {
+    try {
+        const p = await apiFetch('/cost/api/preferences', { method: 'POST', body: JSON.stringify({ use_regional_rate: key }) });
+        fillForm(p);
+        showStatus('Rates updated from regional average.', 'success');
+    } catch (e) { showStatus(e.message, 'danger'); }
+}
+
+async function loadPreferences() {
+    try {
+        const p = await apiFetch('/cost/api/preferences');
+        fillForm(p);
+    } catch (e) { showStatus(e.message, 'danger'); }
+}
+
+document.getElementById('prefsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const val = (id) => { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
+    try {
+        const p = await apiFetch('/cost/api/preferences', {
+            method: 'POST',
+            body: JSON.stringify({
+                home_rate_usd_per_kwh: val('home_rate_usd_per_kwh'),
+                public_rate_usd_per_kwh: val('public_rate_usd_per_kwh'),
+                petrol_price_per_liter: val('petrol_price_per_liter'),
+                petrol_l_per_100km: val('petrol_l_per_100km'),
+                annual_km: val('annual_km'),
+            }),
+        });
+        fillForm(p);
+        showStatus('Rates saved.', 'success');
+    } catch (e) { showStatus(e.message, 'danger'); }
+});
+
+document.addEventListener('DOMContentLoaded', () => { loadRegions(); loadPreferences(); });
+</script>
+{% endblock %}

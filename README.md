@@ -154,13 +154,47 @@ git clone https://github.com/your-username/cold_weather_EV_range_degradation.git
 cd cold_weather_EV_range_degradation
 ```
 
-## 2️⃣ Install Dependencies
+## 2️⃣ Create a Virtual Environment
+
+Keeps this project's packages separate from anything else on your
+machine — recommended, and the only supported way if you don't have
+(or don't want) permission to install packages system-wide.
+
+```bash
+python -m venv venv
+```
+
+Activate it (do this every time you open a new terminal to work on
+the project):
+
+```bash
+# Windows PowerShell
+venv\Scripts\Activate.ps1
+
+# Windows cmd.exe
+venv\Scripts\activate.bat
+
+# macOS / Linux
+source venv/bin/activate
+```
+
+Your prompt should now start with `(venv)`. If PowerShell refuses to
+run the activation script with an "execution of scripts is disabled"
+error, run this once in an **admin** PowerShell, then retry:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+## 3️⃣ Install Dependencies
+
+With the virtual environment active:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 3️⃣ Seed the Database
+## 4️⃣ Seed the Database
 
 ```bash
 cd backend
@@ -172,7 +206,7 @@ This creates an admin account (and a demo account, unless
 from your `.env`, or a freshly generated random password printed once to
 the console — **copy it immediately**, see "Credentials" below.
 
-## 4️⃣ Set up API keys (optional but recommended)
+## 5️⃣ Set up API keys (optional but recommended)
 
 The app runs without any API key — `OPENWEATHERMAP_API_KEY` defaults to
 `'demo'` in `backend/app/config.py`, which makes `backend/app/api/weather.py`
@@ -199,25 +233,97 @@ value to a public repo** — always go through `.env`, which git ignores.
 
 Other keys in `.env.example` (all optional):
 - `WEATHERAPI_KEY` — alternate weather provider, same signup pattern at https://www.weatherapi.com/signup.aspx
-- `ANTHROPIC_API_KEY` — powers Phase 3's AI trip briefings, Q&A, and anomaly narration (see below). Without it, these features fall back to template-generated text instead of failing.
-- `MAIL_USERNAME` / `MAIL_PASSWORD` — only needed if you enable email features (e.g. password reset); for Gmail, use an [App Password](https://myaccount.google.com/apppasswords), not your real password
+- `GEMINI_API_KEY` — powers Phase 3's AI trip briefings, Q&A, and anomaly narration (see below). Without it, these features fall back to template-generated text instead of failing. Free tier, no billing account required.
 - `SECRET_KEY` — set this to a long random string in any real/public deployment; the default in `config.py` is fine for local dev only
 
-### Getting an Anthropic API key (for Phase 3's AI features)
+### Sending real emails (password reset, verification, cold-snap alerts, notifications)
 
-1. Create an account at https://console.anthropic.com
-2. Go to **API Keys** in the console and create a new key
+Without `MAIL_USERNAME`/`MAIL_PASSWORD` set, this app never fails or
+errors on an email step — it logs `[EMAIL-WOULD-SEND] (MAIL_USERNAME/
+PASSWORD not configured) ...` to the console instead and carries on
+(see `services/auth_email.py`, `services/alerts.py`,
+`services/notifications.py`). That's the deliberate fail-soft default,
+not a bug — but it does mean "I never received the reset email" is
+expected behavior until you configure real SMTP credentials. To
+actually send:
+
+1. Turn on 2-Step Verification on the Gmail account you want to send
+   from: https://myaccount.google.com/security (required — Gmail
+   rejects a plain account password for SMTP from an app like this
+   one, full stop, even if it's correct).
+2. Generate an **App Password**: https://myaccount.google.com/apppasswords
+   — pick any name (e.g. "Cold Weather EV"), then copy the 16-character
+   password it shows you. This is different from your real Gmail
+   password and is the only thing that will work here.
+3. In `.env` (copy from `.env.example` first if you haven't), set:
+   ```
+   MAIL_SERVER=smtp.gmail.com
+   MAIL_PORT=587
+   MAIL_USERNAME=your_real_gmail_address@gmail.com
+   MAIL_PASSWORD=the16charapppasswordfromstep2
+   ```
+   Use the App Password exactly as shown (spaces in the copied version
+   are fine to remove or keep — Google accepts either).
+4. Restart the app. Try "Forgot password" — you should get a real
+   email within a few seconds, and the console log line changes from
+   `[EMAIL-WOULD-SEND]` to nothing (a successful `flask_mail` send
+   doesn't log by default).
+
+If it still doesn't send after this, check the console output for the
+actual SMTP error (`[ERROR] Failed to send email to <address>:
+<reason>`) rather than assuming it's silent — common causes are a
+typo'd address, an App Password copied with a missing character, or a
+network/firewall blocking outbound port 587.
+
+**Still stuck?** Run the diagnostic script instead of guessing:
+
+```bash
+cd backend
+python ../scripts/check_email_config.py                  # checks config + SMTP login
+python ../scripts/check_email_config.py you@example.com   # also sends a real test email
+```
+
+It shows exactly which config values Flask loaded, opens a real SMTP
+connection and reports the precise error if login fails (wrong
+password vs. blocked port are different failures with different
+fixes), and can send a real test email so you can confirm delivery
+without going through the app's UI at all.
+
+**If you're also seeing an `OperationalError: no such column` on
+login/register/forgot-password specifically** (not just missing
+emails), that error is crashing the request *before* it ever reaches
+the email-sending code — fix that first (see "Database Migrations"
+below); the email config above is unrelated to that error and won't
+fix it by itself.
+
+### Getting a Gemini API key (for Phase 3's AI features, free tier)
+
+1. Go to https://aistudio.google.com/apikey and sign in with any Google
+   account — no credit card or billing account needed.
+2. Click **Create API key**, then copy it.
 3. Add it to `.env`:
    ```
-   ANTHROPIC_API_KEY=sk-ant-your-real-key-here
+   GEMINI_API_KEY=your-real-key-here
    ```
-4. (Optional) `ANTHROPIC_MODEL` defaults to `claude-sonnet-5` — override it in `.env` if you want a different model. Full docs: https://docs.claude.com/en/api/overview
+4. (Optional) `GEMINI_MODEL` defaults to `gemini-flash-latest` — Google's
+   own auto-updating alias for whichever free-tier Flash model they
+   currently recommend, deliberately not a dated model ID. Google has
+   been retiring specific model versions (`gemini-2.0-flash`, then
+   `gemini-2.5-flash`) faster than their own published shutdown dates
+   promised in 2026, so pinning to a dated ID here tends to break again
+   within a few months. If you see an error like `This model
+   models/gemini-X.X-flash is no longer available`, that's this
+   happening — either leave `GEMINI_MODEL` unset (use the alias) or
+   check https://ai.google.dev/gemini-api/docs/deprecations for
+   whatever's currently recommended and set that instead. The app also
+   automatically retries a short list of other free-tier models if the
+   configured one comes back "not found" (see `services/llm.py`).
 
-This key is billed per API call by Anthropic (separate from any claude.ai
-subscription) — see https://docs.claude.com for current pricing before
-enabling this in a public deployment with real traffic.
+A new key from Google AI Studio starts on the free tier automatically —
+you don't need to opt into anything or attach a payment method to use
+it at this level. Full docs: https://ai.google.dev/gemini-api/docs
 
-## 5️⃣ (Optional) Train the ML models explicitly
+## 6️⃣ (Optional) Train the ML models explicitly
 
 Trained model files (`backend/app/ml/saved_models/`) are gitignored —
 they're regenerated automatically on first prediction request if
@@ -229,7 +335,7 @@ cd backend/app/ml
 python train.py
 ```
 
-## 6️⃣ Run the Application
+## 7️⃣ Run the Application
 
 ```bash
 python run.py
@@ -262,6 +368,31 @@ an existing database that was previously only managed by `create_all()`.
 To switch from the default MySQL/SQLite setup to Postgres, set
 `DATABASE_URL` in `.env` to a `postgresql+psycopg2://...` URL (see
 `.env.example`) — `psycopg2-binary` is already in `requirements.txt`.
+
+### "no such column" errors (`OperationalError`)
+
+This means your local SQLite file (`backend/cold_weather_ev.db` by
+default) was created by `db.create_all()` before this project's models
+gained the column it's now complaining about — `create_all()` only
+creates missing *tables*, it never alters an *existing* table, so a
+database created early on doesn't automatically pick up columns added
+by later changes. This shows up as `sqlite3.OperationalError: no such
+column: ...` on almost any page that touches that table (login,
+register, forgot-password all touch `users`, so this can look like
+"nothing works").
+
+For a local dev database with no data you need to keep, the fastest
+fix is to reset it:
+
+```bash
+cd backend
+python ../scripts/reset_dev_db.py   # prompts for confirmation, then recreates every table fresh
+python seed_data.py                 # re-seed the admin/demo accounts
+```
+
+If you do have real data you need to keep, use the proper migration
+path above (`flask db init` / `migrate` / `upgrade`) instead of
+resetting.
 
 # 🌐 Application URL
 
@@ -484,7 +615,7 @@ data isn't "AI" in the generative sense the branding implied. Phase 3
 closes that gap, deliberately narrowly:
 
 - **AI Trip Briefing** (`GET /predictions/api/<id>/briefing`) — a
-  natural-language summary of a saved prediction, written by Claude but
+  natural-language summary of a saved prediction, written by Gemini but
   grounded entirely in that prediction's own already-computed numbers.
   The model is explicitly instructed never to invent, adjust, or
   recompute a figure — only to phrase the given facts fluently.
@@ -498,11 +629,12 @@ closes that gap, deliberately narrowly:
   is only used afterward, optionally, to phrase an already-detected
   anomaly in plain language — it never decides what counts as anomalous.
 
-**No `ANTHROPIC_API_KEY` configured?** All three features still work —
+**No `GEMINI_API_KEY` configured?** All three features still work —
 they fall back to template-generated text built from the same
 underlying data, clearly labeled `"source": "template"` in the API
-response, rather than failing. See "Getting an Anthropic API key" above
-to enable the LLM-generated version.
+response, rather than failing. See "Getting a Gemini API key" above
+to enable the LLM-generated version — free tier, no billing account
+required.
 
 # 🔁 Real data feedback loop (Phase 4)
 

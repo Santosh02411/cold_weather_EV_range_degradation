@@ -237,11 +237,19 @@ generative-model calls anywhere. Phase 3 adds real ones, scoped
 deliberately narrow: **the LLM only ever phrases already-computed
 facts; it never computes a number.**
 
-### 6.1 `services/llm.py` — thin Anthropic Messages API wrapper
+### 6.1 `services/llm.py` — thin Gemini generateContent API wrapper
 
-- Reads `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` from Flask config
-  (`config.py`), defaulting to `claude-sonnet-5`.
-- `call_claude(app_config, system_prompt, user_message, max_tokens)`
+- Reads `GEMINI_API_KEY` / `GEMINI_MODEL` from Flask config
+  (`config.py`), defaulting to `gemini-flash-latest` — Google's own
+  auto-updating alias for whichever free-tier Flash model they
+  currently recommend, chosen deliberately over a dated model ID since
+  Google has been retiring those faster than their published shutdown
+  dates in 2026 (`gemini-2.0-flash`, then `gemini-2.5-flash`, both
+  404'd before their announced retirement date). If the configured
+  model is ever retired anyway, `call_gemini()` automatically retries a
+  short fallback list of other free-tier models (`FALLBACK_MODELS`)
+  before giving up.
+- `call_gemini(app_config, system_prompt, user_message, max_tokens)`
   returns `(text, error)` — never raises. Every caller in
   `ai_features.py` checks `error` and falls back to a template instead
   of surfacing a 500 to the user.
@@ -309,16 +317,16 @@ the frontend surfaces a warning badge with an "Explain why" button when
 ### 6.4 Verification status
 
 Same limitation as Phase 2's `geo.py`: `llm.py`'s actual HTTP call to
-`api.anthropic.com` was written against the documented Messages API
-shape but could not be executed in this sandbox (no outbound network).
-**What was verified:** the full fallback path (`is_configured() ==
-False` → template generation) for all three features, end-to-end,
-including the real `detect_anomaly()` arithmetic against real feature
-inputs (see `PROJECT_WORKFLOW.md` for the exact test cases run — one
-that correctly did NOT flag as anomalous, one that correctly did).
-**What wasn't verified:** an actual round-trip to Claude with a real API
-key. Test this before enabling Phase 3 in any deployment with a real
-key configured.
+`generativelanguage.googleapis.com` was written against the documented
+generateContent API shape but could not be executed in this sandbox
+(no outbound network). **What was verified:** the full fallback path
+(`is_configured() == False` → template generation) for all three
+features, end-to-end, including the real `detect_anomaly()` arithmetic
+against real feature inputs (see `PROJECT_WORKFLOW.md` for the exact
+test cases run — one that correctly did NOT flag as anomalous, one
+that correctly did). **What wasn't verified:** an actual round-trip to
+Gemini with a real API key. Test this before enabling Phase 3 in any
+deployment with a real key configured.
 
 ## 7. What Was Checked for Real Row-Level Data (and why it wasn't used)
 

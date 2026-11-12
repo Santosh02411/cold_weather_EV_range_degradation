@@ -1194,3 +1194,27 @@ sane kWh figure. Full suite: 82/82 passing.
 the new `/vehicles/api/<id>/efficiency-curve` and
 `/weather/api/temperature-exposure` endpoints' real HTTP behavior, and
 the Chart.js efficiency-curve rendering in an actual browser.
+
+---
+
+## Later update — `services/llm.py` switched from Anthropic to Gemini
+
+The Phase 3 log above describes `llm.py` as originally built against
+Anthropic's Messages API. It was later swapped to Google's Gemini API
+(`generativelanguage.googleapis.com`), on request, specifically so
+Phase 3's AI features work entirely on a free-tier key with no billing
+account required (`GEMINI_API_KEY` from https://aistudio.google.com/apikey,
+default model `gemini-2.0-flash`) — the original Anthropic integration
+required a paid, billed-per-call API key with no free tier. The
+public interface (`is_configured()`, and the two-value
+`(text, error)` return shape) and every call site in
+`services/ai_features.py` are unchanged; only the request/response
+shape inside `llm.py` (`call_gemini()`, replacing `call_claude()`)
+changed to match Gemini's `generateContent` REST API
+(`system_instruction` + `contents` request fields, `candidates[0]
+.content.parts[].text` response shape, plus handling Gemini's
+`promptFeedback.blockReason` for safety-blocked responses, which has
+no Anthropic equivalent). Same "written against the documented API,
+not executed against the live internet in this sandbox" caveat as the
+original Phase 3 entry above — test against a real `GEMINI_API_KEY`
+before relying on this.

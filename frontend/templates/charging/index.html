@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Charging Analysis — EV Cold Weather Modeler{% endblock %}
-{% block page_title %}🔌 Charging Performance Analysis{% endblock %}
+{% block page_title %}🔌 Charging Management{% endblock %}
 {% block content %}
 <div class="animate-fade">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
@@ -9,7 +9,7 @@
             <form onsubmit="submitCharging(event)">
                 <div class="form-group">
                     <label class="form-label">Select Vehicle</label>
-                    <select name="vehicle_id" class="form-control" required>
+                    <select name="vehicle_id" id="chargingVehicleSelect" class="form-control" required>
                         <option value="">-- Choose Vehicle --</option>
                         {% for v in vehicles %}
                         <option value="{{ v.id }}">{{ v.manufacturer }} {{ v.model_name }} ({{ v.max_charging_power_kw or '?' }} kW max)</option>
@@ -37,6 +37,8 @@
                 </div>
                 <button type="submit" class="btn btn-primary btn-lg" style="width:100%;margin-top:8px;">⚡ Analyze Charging</button>
             </form>
+            <button class="btn btn-outline btn-sm" style="width:100%;margin-top:10px;" onclick="loadHomeRecommendation()">🏠 Compare Home vs. Public Charging</button>
+            <div id="homeRecommendationResult" style="margin-top:10px;"></div>
         </div>
         <div>
             <div id="chargingResult">
@@ -53,13 +55,230 @@
     </div>
 
     <div class="card" style="margin-top:20px;">
-        <div class="card-header"><h3 class="card-title">🔌 Find Real Charging Stations</h3></div>
-        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Powered by Open Charge Map — real, community-maintained station data.</p>
-        <div style="display:flex;gap:8px;margin-bottom:14px;">
-            <input type="text" id="stationSearchInput" placeholder="City or address, e.g. Chicago, IL" style="flex:1" />
+        <div class="card-header"><h3 class="card-title">🔌 Nearby Charging Stations</h3></div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Powered by Open Charge Map — real, community-maintained station data. Select a vehicle above to see charger-type compatibility and availability estimates.</p>
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+            <input type="text" id="stationSearchInput" placeholder="City or address, e.g. Chicago, IL" style="flex:1;min-width:200px;" />
             <button class="btn" onclick="findChargingStations()">Search</button>
+            <button class="btn btn-outline" onclick="findChargingStations('fastest')">⚡ Fastest</button>
+            <button class="btn btn-outline" onclick="findChargingStations('cheapest')">💲 Cheapest</button>
         </div>
         <div id="stationsResult"></div>
     </div>
+
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">🗓️ My Charging Reservations</h3></div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+            A personal charging plan — not a real booking with any charging network (no such free reservation API exists to integrate with). This just helps you track intended stops and avoid double-booking yourself.
+        </p>
+        <div id="reservationsList"></div>
+        <button class="btn btn-outline btn-sm" style="margin-top:10px;" onclick="openReservationForm()">+ Add reservation</button>
+        <div id="reservationForm" style="display:none;margin-top:12px;">
+            <div class="form-row">
+                <input type="text" id="resStationName" class="form-control" placeholder="Station name">
+                <input type="datetime-local" id="resStart" class="form-control">
+            </div>
+            <div class="form-row">
+                <input type="number" id="resDuration" class="form-control" placeholder="Duration (min)" value="30">
+                <button class="btn btn-primary btn-sm" onclick="createReservation()">Save</button>
+            </div>
+        </div>
+    </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function submitCharging(event) {
+    event.preventDefault();
+    const form = event.target;
+    const data = {
+        vehicle_id: parseInt(form.vehicle_id.value),
+        temperature_c: parseFloat(form.temperature_c.value),
+        current_pct: parseFloat(form.current_pct.value),
+        target_pct: parseFloat(form.target_pct.value),
+        fast_charging: form.fast_charging?.checked ?? true,
+    };
+
+    try {
+        const result = await apiFetch('/charging/api/predict', {
+            method: 'POST', body: JSON.stringify(data),
+        });
+        const container = document.getElementById('chargingResult');
+        if (container) {
+            container.innerHTML = `
+                <div class="animate-slide stats-grid">
+                    <div class="stat-card"><div class="stat-icon blue">⏱️</div>
+                        <div><div class="stat-value">${result.charging_time_minutes} min</div><div class="stat-label">Charging Time</div></div></div>
+                    <div class="stat-card"><div class="stat-icon amber">⚡</div>
+                        <div><div class="stat-value">${result.effective_power_kw} kW</div><div class="stat-label">Effective Power</div></div></div>
+                    <div class="stat-card"><div class="stat-icon green">📊</div>
+                        <div><div class="stat-value">${result.efficiency_pct}%</div><div class="stat-label">Charging Efficiency</div></div></div>
+                    <div class="stat-card"><div class="stat-icon red">📉</div>
+                        <div><div class="stat-value">${result.slowdown_pct}%</div><div class="stat-label">Cold Slowdown</div></div></div>
+                </div>`;
+        }
+        loadChargingComparison(data.vehicle_id, data.fast_charging);
+    } catch (e) {
+        showAlert('danger', e.message);
+    }
+}
+
+async function loadChargingComparison(vehicleId, fastCharging) {
+    try {
+        const result = await apiFetch('/charging/api/compare', {
+            method: 'POST', body: JSON.stringify({ vehicle_id: vehicleId, fast_charging: fastCharging }),
+        });
+        const ctx = document.getElementById('chargingChart');
+        if (!ctx) return;
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: result.comparisons.map(c => c.label),
+                datasets: [{
+                    label: 'Charging Time (min)',
+                    data: result.comparisons.map(c => c.charging_time_minutes),
+                    backgroundColor: result.comparisons.map(c =>
+                        c.charging_time_minutes > 60 ? 'rgba(248,113,113,0.6)' :
+                        c.charging_time_minutes > 40 ? 'rgba(251,191,36,0.6)' : 'rgba(52,211,153,0.6)'),
+                    borderRadius: 8,
+                }],
+            },
+            options: { plugins: { legend: { display: false } } },
+        });
+    } catch (e) { console.log('Comparison chart:', e.message); }
+}
+
+async function loadHomeRecommendation() {
+    const vehicleId = parseInt(document.getElementById('chargingVehicleSelect').value);
+    const container = document.getElementById('homeRecommendationResult');
+    if (!vehicleId) { showAlert('danger', 'Select a vehicle first.'); return; }
+    container.innerHTML = 'Comparing…';
+    try {
+        const r = await apiFetch('/charging/api/home-recommendation', {
+            method: 'POST',
+            body: JSON.stringify({ vehicle_id: vehicleId, current_pct: 20, target_pct: 80, temperature_c: -5, hours_available_at_home: 8 }),
+        });
+        const badge = r.recommendation === 'home'
+            ? '<span class="badge badge-green">Charge at home</span>'
+            : '<span class="badge badge-amber">Use public fast charging</span>';
+        container.innerHTML = `
+            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
+                ${badge}<br>${r.reason}<br>
+                Home: ${r.home.charging_time_minutes} min, ~$${r.home.cost.estimated_cost_usd} ·
+                Public: ${r.public_fast.charging_time_minutes} min, ~$${r.public_fast.cost.estimated_cost_usd}
+            </div>`;
+    } catch (e) { container.innerHTML = e.message; }
+}
+
+async function findChargingStations(priority) {
+    const input = document.getElementById('stationSearchInput');
+    const container = document.getElementById('stationsResult');
+    const vehicleId = parseInt(document.getElementById('chargingVehicleSelect').value);
+    const place = input?.value?.trim();
+    if (!place || !container) return;
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Searching…</p>';
+    try {
+        let url, result;
+        if (priority) {
+            if (!vehicleId) { showAlert('danger', 'Select a vehicle to get fastest/cheapest recommendations.'); return; }
+            url = `/charging/api/recommend?place=${encodeURIComponent(place)}&vehicle_id=${vehicleId}&priority=${priority}`;
+            result = await apiFetch(url);
+            result.stations = result.stations || [];
+        } else {
+            url = `/charging/api/stations?place=${encodeURIComponent(place)}` + (vehicleId ? `&vehicle_id=${vehicleId}` : '');
+            result = await apiFetch(url);
+        }
+        if (result.stations.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No stations found nearby.</p>';
+            return;
+        }
+        const rows = result.stations.map(s => `
+            <tr>
+                <td>${s.name}${s.operator ? ' <span style="color:var(--text-muted);font-size:11px;">(' + s.operator + ')</span>' : ''}
+                    ${s.compatible === true ? ' <span class="badge badge-green">compatible</span>' : ''}
+                    ${s.compatible === false ? ' <span class="badge badge-red">incompatible</span>' : ''}
+                </td>
+                <td>${s.distance_km !== null ? s.distance_km + ' km' : '—'}</td>
+                <td>${s.connector_types.join(', ') || '—'}</td>
+                <td>${s.max_power_kw ? s.max_power_kw + ' kW' : '—'}</td>
+                <td>${s.availability ? s.availability.label : '—'}</td>
+                ${s.charging_estimate ? `<td>${s.charging_estimate.charging_time_minutes} min</td><td>$${s.cost_estimate.estimated_cost_usd}</td>` : ''}
+                <td><button class="btn btn-outline btn-sm" onclick='reserveFromStation(${JSON.stringify(s.name)}, ${s.latitude}, ${s.longitude}, ${s.id ?? 'null'})'>Reserve</button></td>
+            </tr>`).join('');
+        const extraCols = result.stations[0].charging_estimate ? '<th>Est. Time</th><th>Est. Cost</th>' : '';
+        container.innerHTML = `
+            <table>
+                <thead><tr><th>Station</th><th>Distance</th><th>Connectors</th><th>Max Power</th><th>Availability</th>${extraCols}<th></th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't find stations: ${e.message}</p>`;
+    }
+}
+
+function openReservationForm() {
+    document.getElementById('reservationForm').style.display = 'block';
+}
+
+function reserveFromStation(name, lat, lon, ocmId) {
+    openReservationForm();
+    document.getElementById('resStationName').value = name;
+    window._pendingReservationLoc = { lat, lon, ocmId };
+    window.scrollTo({ top: document.getElementById('reservationForm').offsetTop, behavior: 'smooth' });
+}
+
+async function createReservation() {
+    const vehicleId = parseInt(document.getElementById('chargingVehicleSelect').value);
+    const stationName = document.getElementById('resStationName').value.trim();
+    const start = document.getElementById('resStart').value;
+    const duration = parseInt(document.getElementById('resDuration').value || '30');
+    if (!vehicleId || !stationName || !start) { showAlert('danger', 'Vehicle, station name, and start time are required.'); return; }
+    const loc = window._pendingReservationLoc || {};
+    try {
+        await apiFetch('/charging/api/reservations', {
+            method: 'POST',
+            body: JSON.stringify({
+                vehicle_id: vehicleId, station_name: stationName, reserved_start: start,
+                duration_minutes: duration, latitude: loc.lat, longitude: loc.lon, station_ocm_id: loc.ocmId,
+            }),
+        });
+        showAlert('success', 'Reservation saved.');
+        document.getElementById('reservationForm').style.display = 'none';
+        window._pendingReservationLoc = null;
+        loadReservations();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+async function loadReservations() {
+    const container = document.getElementById('reservationsList');
+    try {
+        const reservations = await apiFetch('/charging/api/reservations');
+        if (!reservations.length) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">No reservations yet.</p>';
+            return;
+        }
+        const statusBadge = (s) => s === 'upcoming' ? 'badge-green' : (s === 'cancelled' ? 'badge-red' : 'badge-blue');
+        container.innerHTML = reservations.map(r => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-color);">
+                <div>
+                    <strong>${r.station_name}</strong> <span class="badge ${statusBadge(r.status)}">${r.status}</span>
+                    <div style="font-size:12px;color:var(--text-muted);">${new Date(r.reserved_start).toLocaleString()} · ${r.duration_minutes} min</div>
+                </div>
+                ${r.status === 'upcoming' ? `<button class="btn btn-outline btn-sm" onclick="cancelReservation(${r.id})">Cancel</button>` : ''}
+            </div>`).join('');
+    } catch (e) {
+        container.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">${e.message}</p>`;
+    }
+}
+
+async function cancelReservation(id) {
+    if (!confirm('Cancel this reservation?')) return;
+    try {
+        await apiFetch(`/charging/api/reservations/${id}`, { method: 'DELETE' });
+        loadReservations();
+    } catch (e) { showAlert('danger', e.message); }
+}
+
+document.addEventListener('DOMContentLoaded', loadReservations);
+</script>
 {% endblock %}

@@ -20,6 +20,30 @@ Changes from v1 (see /docs/PROJECT_WORKFLOW.md for the full story):
   - Model versioning: every training run is written to its own
     saved_models/v<N>_<timestamp>/ directory with metadata, and
     saved_models/current_version.json points at the active version.
+
+Phase 2 additions (ML feature expansion):
+  - Model registry (see automl.py) now also includes LightGBM,
+    CatBoost, an MLPRegressor neural network, and a StackingRegressor
+    ensemble, alongside the original linear/RF/GB/XGBoost set -- every
+    optional package follows the same "absent package -> silently
+    excluded, not a crash" convention already established for xgboost.
+  - Feature engineering (see feature_engineering.py): a handful of
+    physically-motivated interaction features (wind chill, HVAC-cold
+    interaction, speed^2, is-freezing) are computed by the SAME
+    function for both training and prediction, so the two can't drift
+    apart the way physics_baseline_degradation almost did (see this
+    file's Phase 1 notes above).
+  - Optional per-model hyperparameter tuning (RandomizedSearchCV) via
+    `use_hyperparameter_tuning=True`. `run_automl()` is a thin,
+    self-documenting wrapper for "turn tuning on and train everything".
+  - Feature selection is reported (not silently applied) -- see
+    feature_engineering.select_features(): a cumulative-importance
+    ranking is stored in metadata so the admin dashboard can show which
+    inputs are pulling weight, without a threshold silently shrinking
+    what predict.py expects to receive.
+  - A per-feature distribution baseline (quantile bins) is stored in
+    metadata for data-drift detection (see drift.py) -- this is what
+    services/drift_monitor.py compares live prediction inputs against.
 """
 import os
 import json
@@ -29,21 +53,24 @@ from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.model_selection import train_test_split, KFold, cross_val_score
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.pipeline import Pipeline
 
 try:
-    from xgboost import XGBRegressor
-    HAS_XGBOOST = True
-except ImportError:
-    HAS_XGBOOST = False
-
-try:
+    from . import automl as automl_mod
+    from . import feature_engineering as fe
+    from . import drift as drift_mod
     from .physics import physics_baseline_batch, calibration_anchors
 except ImportError:  # allows running this file standalone via `python train.py`
+    import automl as automl_mod
+    import feature_engineering as fe
+    import drift as drift_mod
     from physics import physics_baseline_batch, calibration_anchors
+
+HAS_XGBOOST = automl_mod.HAS_XGBOOST
+HAS_LIGHTGBM = automl_mod.HAS_LIGHTGBM
+HAS_CATBOOST = automl_mod.HAS_CATBOOST
 
 
 CALIBRATION_CSV = os.path.join(
@@ -51,12 +78,18 @@ CALIBRATION_CSV = os.path.join(
     'data', 'real_world_calibration', 'temperature_range_benchmarks.csv'
 )
 
-FEATURE_COLS = [
+RAW_FEATURE_COLS = [
     'temperature_c', 'humidity', 'wind_speed_kmh', 'precipitation',
     'battery_percentage', 'vehicle_speed_kmh', 'hvac_usage',
     'terrain_type', 'battery_age_years', 'battery_capacity_kwh',
     'epa_range_km', 'vehicle_weight_kg', 'physics_baseline_degradation',
 ]
+
+# Raw inputs + engineered interaction features (feature_engineering.py).
+# Every model trains and predicts on this full set -- see that module's
+# docstring for why engineering the features is a shared function
+# rather than duplicated logic in train.py and predict.py.
+FEATURE_COLS = RAW_FEATURE_COLS + fe.ENGINEERED_FEATURE_COLS
 
 
 def generate_synthetic_dataset(n_samples=8000, seed=42):
@@ -129,6 +162,7 @@ def generate_synthetic_dataset(n_samples=8000, seed=42):
         'range_degradation_pct': np.round(degradation, 2),
     })
 
+    df = fe.engineer_features(df)
     return df
 
 
@@ -311,6 +345,7 @@ def run_calibration_check(models, feature_medians=None):
         sample = dict(BASELINE_TRIP_CONDITIONS)
         sample['temperature_c'] = temp_c
         sample['physics_baseline_degradation'] = float(physics_baseline_batch(np.array([temp_c]))[0])
+        sample = fe.engineer_feature_row(sample)
         X = pd.DataFrame([sample])[FEATURE_COLS]
 
         preds = {name: float(model.predict(X)[0]) for name, model in models.items()}
@@ -334,7 +369,26 @@ def run_calibration_check(models, feature_medians=None):
     }
 
 
-def train_all_models(df=None, n_samples=8000, extra_metadata=None):
+def _extract_feature_importance(model):
+    """Best-effort feature importance extraction across every model
+    type this project trains. Pipelines (the neural network) and the
+    stacking ensemble don't expose a simple per-input-feature
+    importance the same way a single tree/linear model does, so they
+    report an empty dict rather than a misleading one -- their
+    contribution shows up in the model-comparison metrics instead.
+    """
+    if isinstance(model, Pipeline) or isinstance(model, automl_mod.StackingRegressor):
+        return {}
+    if hasattr(model, 'feature_importances_'):
+        return dict(zip(FEATURE_COLS, model.feature_importances_.tolist()))
+    if hasattr(model, 'coef_'):
+        return dict(zip(FEATURE_COLS, np.abs(np.ravel(model.coef_)).tolist()))
+    return {}
+
+
+def train_all_models(df=None, n_samples=8000, extra_metadata=None,
+                      use_hyperparameter_tuning=False, tuning_n_iter=8, tuning_cv=3,
+                      include_ensemble=True):
     """Train all ML models, evaluate on a real train/val/test split with
     cross-validation, validate against real-world benchmarks, and save
     a new versioned model bundle. Returns the results dict that also
@@ -347,6 +401,19 @@ def train_all_models(df=None, n_samples=8000, extra_metadata=None):
     exist in the in-memory return value and silently vanish once the
     caller's local variable goes out of scope. A training run's
     provenance should be recoverable from disk alone.
+
+    `use_hyperparameter_tuning`: when True, every tunable model family
+    runs a small RandomizedSearchCV (see automl.py) before its final
+    fit, and the search's best params/CV MAE are recorded per model.
+    Off by default so a plain retrain stays fast -- see run_automl()
+    below for the "on" entry point.
+
+    A single model family failing to fit (a real risk once optional
+    packages like catboost/lightgbm and a gradient-based neural network
+    are in the mix) is caught and skipped rather than aborting the
+    whole training run -- reported under metadata['training_errors']
+    -- since Live Model Retraining depends on a bad/unavailable model
+    never being able to take down every other model's retrain.
     """
     if df is None:
         df = generate_synthetic_dataset(n_samples)
@@ -358,59 +425,94 @@ def train_all_models(df=None, n_samples=8000, extra_metadata=None):
     X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.30, random_state=42)
     X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.50, random_state=42)
 
-    model_defs = {
-        'linear_regression': LinearRegression(),
-        'random_forest': RandomForestRegressor(n_estimators=200, max_depth=15, random_state=42, n_jobs=-1),
-        'gradient_boosting': GradientBoostingRegressor(n_estimators=150, max_depth=6, learning_rate=0.1, random_state=42),
-    }
-    if HAS_XGBOOST:
-        model_defs['xgboost'] = XGBRegressor(n_estimators=150, max_depth=6, learning_rate=0.1, random_state=42)
+    registry = automl_mod.build_model_registry(include_ensemble=include_ensemble)
 
     results = {}
     trained_models = {}
+    training_errors = {}
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
-    for name, model in model_defs.items():
-        # 5-fold cross-validation on the training split
-        cv_scores = cross_val_score(model, X_train, y_train, cv=kf, scoring='neg_mean_absolute_error')
-        cv_mae_mean = float(-cv_scores.mean())
-        cv_mae_std = float(cv_scores.std())
+    for name, spec in registry.items():
+        try:
+            model = spec['estimator']
+            tuning_report = None
 
-        model.fit(X_train, y_train)
-        trained_models[name] = model
+            if use_hyperparameter_tuning and spec['param_distributions']:
+                model, best_params, best_cv_mae = automl_mod.tune_hyperparameters(
+                    model, spec['param_distributions'], X_train, y_train,
+                    n_iter=tuning_n_iter, cv=tuning_cv,
+                )
+                tuning_report = {'best_params': _jsonable(best_params), 'search_cv_mae': round(best_cv_mae, 4)}
 
-        val_pred = model.predict(X_val)
-        test_pred = model.predict(X_test)
+            # 5-fold cross-validation on the training split, using
+            # whichever hyperparameters this model ended up with
+            # (tuned or default) -- kept as a separate, standard-shaped
+            # CV pass on top of any tuning search so every model's
+            # cross-validation numbers are directly comparable on the
+            # admin dashboard regardless of whether tuning ran.
+            cv_scores = cross_val_score(model, X_train, y_train, cv=kf, scoring='neg_mean_absolute_error')
+            cv_mae_mean = float(-cv_scores.mean())
+            cv_mae_std = float(cv_scores.std())
 
-        if hasattr(model, 'feature_importances_'):
-            importance = dict(zip(FEATURE_COLS, model.feature_importances_.tolist()))
-        elif hasattr(model, 'coef_'):
-            importance = dict(zip(FEATURE_COLS, np.abs(model.coef_).tolist()))
-        else:
-            importance = {}
+            model.fit(X_train, y_train)
+            trained_models[name] = model
 
-        results[name] = {
-            'cross_validation': {
-                'folds': 5,
-                'mae_mean': round(cv_mae_mean, 4),
-                'mae_std': round(cv_mae_std, 4),
-            },
-            'validation_set': {
-                'mae': round(mean_absolute_error(y_val, val_pred), 4),
-                'rmse': round(float(np.sqrt(mean_squared_error(y_val, val_pred))), 4),
-                'r2_score': round(r2_score(y_val, val_pred), 4),
-            },
-            'held_out_test_set': {
-                'mae': round(mean_absolute_error(y_test, test_pred), 4),
-                'rmse': round(float(np.sqrt(mean_squared_error(y_test, test_pred))), 4),
-                'r2_score': round(r2_score(y_test, test_pred), 4),
-            },
-            'feature_importance': importance,
-        }
+            val_pred = model.predict(X_val)
+            test_pred = model.predict(X_test)
+            importance = _extract_feature_importance(model)
+
+            results[name] = {
+                'cross_validation': {
+                    'folds': 5,
+                    'mae_mean': round(cv_mae_mean, 4),
+                    'mae_std': round(cv_mae_std, 4),
+                },
+                'validation_set': {
+                    'mae': round(mean_absolute_error(y_val, val_pred), 4),
+                    'rmse': round(float(np.sqrt(mean_squared_error(y_val, val_pred))), 4),
+                    'r2_score': round(r2_score(y_val, val_pred), 4),
+                },
+                'held_out_test_set': {
+                    'mae': round(mean_absolute_error(y_test, test_pred), 4),
+                    'rmse': round(float(np.sqrt(mean_squared_error(y_test, test_pred))), 4),
+                    'r2_score': round(r2_score(y_test, test_pred), 4),
+                },
+                'feature_importance': importance,
+                'hyperparameter_tuning': tuning_report,
+            }
+        except Exception as e:
+            # Don't let one flaky model family (e.g. a neural net that
+            # fails to converge on a pathological resample, or an
+            # optional package with a version mismatch) take down the
+            # entire training run -- report it and move on.
+            training_errors[name] = str(e)
 
     # Real-world calibration check against the neutral "typical commute"
     # baseline (see BASELINE_TRIP_CONDITIONS).
     calibration_report = run_calibration_check(trained_models)
+
+    # Feature selection report (diagnostic only -- see
+    # feature_engineering.select_features()'s docstring for why this
+    # doesn't change which columns the models actually train on).
+    # Random forest's importances are used as the ranking source since
+    # they're available for every training run (never an empty dict).
+    feature_selection_report = None
+    if 'random_forest' in results and results['random_forest']['feature_importance']:
+        feature_selection_report = fe.select_features(results['random_forest']['feature_importance'])
+
+    # Data-drift baseline: the reference distribution predict-time
+    # inputs get compared against later (see drift.py / services/drift_monitor.py).
+    feature_distribution_baseline = drift_mod.compute_baseline_distribution(X_train, FEATURE_COLS)
+
+    # Best model by held-out test MAE -- the same ranking list_versions()
+    # computes per-version, stored here too so a single training run's
+    # own return value/metadata.json is self-sufficient without having
+    # to re-derive it from list_versions().
+    recommended_model = None
+    if results:
+        recommended_model = min(
+            results.items(), key=lambda kv: kv[1]['held_out_test_set']['mae']
+        )[0]
 
     # --- Versioned save ---
     models_root = get_models_root()
@@ -428,11 +530,20 @@ def train_all_models(df=None, n_samples=8000, extra_metadata=None):
         'trained_at_utc': datetime.now(timezone.utc).isoformat(),
         'n_samples': n_samples,
         'feature_columns': FEATURE_COLS,
+        'raw_feature_columns': RAW_FEATURE_COLS,
+        'engineered_feature_columns': fe.ENGINEERED_FEATURE_COLS,
         'models_included': list(trained_models.keys()),
         'has_xgboost': HAS_XGBOOST,
+        'has_lightgbm': HAS_LIGHTGBM,
+        'has_catboost': HAS_CATBOOST,
+        'hyperparameter_tuning_used': use_hyperparameter_tuning,
+        'recommended_model': recommended_model,
         'metrics': results,
+        'training_errors': training_errors,
         'real_world_calibration': calibration_report,
         'physics_baseline_anchors': calibration_anchors(),
+        'feature_selection': feature_selection_report,
+        'feature_distribution_baseline': feature_distribution_baseline,
     }
     if extra_metadata:
         metadata.update(extra_metadata)
@@ -451,6 +562,38 @@ def train_all_models(df=None, n_samples=8000, extra_metadata=None):
         json.dump(metadata, f, indent=2)
 
     return metadata
+
+
+def _jsonable(d):
+    """Best-effort conversion of a hyperparameter dict (which may
+    contain numpy scalars or tuples, e.g. MLPRegressor's
+    hidden_layer_sizes) into something json.dump can serialize as-is.
+    """
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, tuple):
+            out[k] = list(v)
+        elif isinstance(v, (np.integer, np.floating)):
+            out[k] = v.item()
+        else:
+            out[k] = v
+    return out
+
+
+def run_automl(df=None, n_samples=8000, tuning_n_iter=8, tuning_cv=3, extra_metadata=None):
+    """AutoML: automatically hyperparameter-tune every tunable model
+    family and select the best performer by held-out test MAE. A thin,
+    self-documenting wrapper around
+    train_all_models(use_hyperparameter_tuning=True) -- kept as its
+    own entry point so callers (the admin AutoML button) don't need to
+    know which flag combination "AutoML" maps to.
+    """
+    meta = dict(extra_metadata) if extra_metadata else {}
+    meta['automl_run'] = True
+    return train_all_models(
+        df=df, n_samples=n_samples, extra_metadata=meta,
+        use_hyperparameter_tuning=True, tuning_n_iter=tuning_n_iter, tuning_cv=tuning_cv,
+    )
 
 
 if __name__ == '__main__':

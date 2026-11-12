@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Environmental Impact Dashboard — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🌍 Environmental Impact Dashboard{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        All-time totals from your logged trip simulations — not a projection. The "trees" figure is a
+        commonly-cited rough equivalence (~21 kg CO₂ absorbed per tree per year), not a precise claim.
+    </p>
+    <div class="stats-grid" id="impactGrid" style="margin-bottom:20px;">
+        <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h3 class="card-title">🚀 Jump to</h3></div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <a href="{{ url_for('sustainability.index') }}" class="btn btn-outline" style="justify-content:flex-start;">🌱 CO₂ Savings Calculator</a>
+            <a href="{{ url_for('sustainability.footprint_page') }}" class="btn btn-outline" style="justify-content:flex-start;">📉 Carbon Footprint Analysis</a>
+            <a href="{{ url_for('sustainability.fuel_savings_page') }}" class="btn btn-outline" style="justify-content:flex-start;">⛽ Fuel Savings</a>
+            <a href="{{ url_for('sustainability.green_score_page') }}" class="btn btn-outline" style="justify-content:flex-start;">🍃 Green Driving Score</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadImpact() {
+    const el = document.getElementById('impactGrid');
+    try {
+        const r = await apiFetch('/sustainability/api/impact-summary');
+        el.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-icon green">🌱</div>
+                <div><div class="stat-value">${r.total_kg_co2_saved} kg</div><div class="stat-label">CO₂ Saved (All-Time)</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon blue">🚗</div>
+                <div><div class="stat-value">${r.trip_count}</div><div class="stat-label">Trips Logged</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon purple">🌳</div>
+                <div><div class="stat-value">${r.equivalent_trees_planted_per_year}</div><div class="stat-label">≈ Trees Planted (1yr equiv.)</div></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon amber">⚡</div>
+                <div><div class="stat-value" style="font-size:16px;">${r.grid_intensity_g_co2_per_kwh} g/kWh</div><div class="stat-label">Grid Intensity Used</div></div>
+            </div>`;
+    } catch (e) { el.innerHTML = `<p style="color:var(--accent-red);font-size:13px;">${e.message}</p>`; }
+}
+
+document.addEventListener('DOMContentLoaded', loadImpact);
+</script>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Fuel Savings — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}⛽ Fuel Savings{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+        Liters of petrol not burned by driving electric instead — a physical volume, not a dollar figure.
+        For the money side of switching, see <a href="{{ url_for('cost.savings_page') }}">Savings Calculator</a> in Cost Analysis.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Your Driving</h3></div>
+            <form id="fuelForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Petrol car (L/100km)</label>
+                        <input type="number" name="petrol_l_per_100km" class="form-control" step="0.1" min="0" placeholder="Uses your saved default">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Annual distance (km)</label>
+                        <input type="number" name="annual_km" class="form-control" step="100" min="0" placeholder="Uses your saved default">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Years</label>
+                    <input type="number" name="years" class="form-control" value="1" min="1" max="20">
+                </div>
+                <button type="submit" class="btn btn-primary">⛽ Calculate</button>
+            </form>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Result</h3></div>
+            <div id="fuelResult"><p style="color:var(--text-muted);font-size:13px;">Calculate to see liters saved.</p></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('fuelForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = new FormData(e.target);
+    const body = { years: parseInt(form.get('years')) };
+    ['petrol_l_per_100km', 'annual_km'].forEach(f => { if (form.get(f)) body[f] = parseFloat(form.get(f)); });
+
+    const el = document.getElementById('fuelResult');
+    try {
+        const r = await apiFetch('/sustainability/api/fuel-savings', { method: 'POST', body: JSON.stringify(body) });
+        el.innerHTML = `
+            <div class="stat-card" style="margin-bottom:14px;">
+                <div class="stat-icon blue">⛽</div>
+                <div><div class="stat-value">${r.total_liters_saved} L</div><div class="stat-label">Petrol Not Burned over ${r.years} year(s)</div></div>
+            </div>
+            <p style="font-size:13px;">${r.annual_liters_saved} L/year, based on ${r.petrol_l_per_100km} L/100km over ${r.annual_km} km/year.</p>`;
+    } catch (err) { el.innerHTML = `<p style="color:var(--accent-red);font-size:13px;">${err.message}</p>`; }
+});
+</script>
+{% endblock %}
