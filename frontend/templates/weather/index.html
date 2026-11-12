@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Weather — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🌤️ Weather Integration{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex;gap:12px;align-items:end;">
+            <div class="form-group" style="flex:1;margin-bottom:0;">
+                <label class="form-label">City Name</label>
+                <input type="text" id="weatherCity" class="form-control" placeholder="Enter city name..." value="New York">
+            </div>
+            <button onclick="fetchWeather()" class="btn btn-primary" style="margin-bottom:0;">🌤️ Fetch Weather</button>
+        </div>
+    </div>
+    <div id="weatherResult"></div>
+</div>
+{% endblock %}

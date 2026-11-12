@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Reports — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}📄 Report Generation{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;">
+        <div class="card">
+            <div style="text-align:center;padding:20px 0;">
+                <p style="font-size:48px;margin-bottom:12px;">📊</p>
+                <h3 style="color:var(--text-primary);font-size:18px;font-weight:700;">Prediction Report (CSV)</h3>
+                <p style="color:var(--text-muted);font-size:13px;margin:12px 0;">Export all your prediction history including temperature, degradation, energy consumption, and model used.</p>
+                <a href="{{ url_for('reports.export_predictions_csv') }}" class="btn btn-primary">📥 Download CSV</a>
+            </div>
+        </div>
+        <div class="card">
+            <div style="text-align:center;padding:20px 0;">
+                <p style="font-size:48px;margin-bottom:12px;">🗺️</p>
+                <h3 style="color:var(--text-primary);font-size:18px;font-weight:700;">Trip Report (CSV)</h3>
+                <p style="color:var(--text-muted);font-size:13px;margin:12px 0;">Export trip simulation history with battery usage, charging stops, and arrival battery levels.</p>
+                <a href="{{ url_for('reports.export_trips_csv') }}" class="btn btn-primary">📥 Download CSV</a>
+            </div>
+        </div>
+        <div class="card">
+            <div style="text-align:center;padding:20px 0;">
+                <p style="font-size:48px;margin-bottom:12px;">📄</p>
+                <h3 style="color:var(--text-primary);font-size:18px;font-weight:700;">Summary Report (PDF)</h3>
+                <p style="color:var(--text-muted);font-size:13px;margin:12px 0;">Generate a comprehensive PDF report with all predictions, charts, and vehicle performance data.</p>
+                <a href="{{ url_for('reports.export_pdf') }}" class="btn btn-success">📥 Download PDF</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

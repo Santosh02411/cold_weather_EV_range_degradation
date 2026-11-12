@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Community Range Reports — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🌍 Community Range Reports{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:14px;">
+        Report what your EV actually got in real cold-weather conditions. This is the most
+        direct way to make predictions more accurate over time — every report becomes real
+        training data (see the "Retrain with real data" option in the admin panel).
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Report a Real Drive</h3></div>
+            <form onsubmit="submitCommunityReport(event)">
+                <div class="form-group">
+                    <label class="form-label">Vehicle</label>
+                    <select name="vehicle_id" class="form-control" required>
+                        <option value="">-- Choose Vehicle --</option>
+                        {% for v in vehicles %}
+                        <option value="{{ v.id }}">{{ v.manufacturer }} {{ v.model_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Temperature (°C)</label>
+                        <input type="number" name="temperature_c" class="form-control" step="0.1" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Starting battery (%)</label>
+                        <input type="number" name="starting_battery_pct" class="form-control" min="1" max="100" value="100" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Actual range you got (km)</label>
+                    <input type="number" name="reported_range_km" class="form-control" min="0" step="0.1" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Terrain</label>
+                        <select name="terrain_type" class="form-control">
+                            <option value="flat">Flat</option>
+                            <option value="hilly">Hilly</option>
+                            <option value="mountainous">Mountainous</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Precipitation</label>
+                        <select name="precipitation" class="form-control">
+                            <option value="none">None</option>
+                            <option value="rain">Rain</option>
+                            <option value="snow">Snow</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-check">
+                        <input type="checkbox" name="hvac_usage" checked>
+                        <span style="font-size:13px;color:var(--text-secondary)">Cabin heater was on</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Notes (optional)</label>
+                    <textarea name="notes" class="form-control" rows="2" placeholder="Highway driving, preconditioned before leaving, etc."></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Submit Report</button>
+            </form>
+        </div>
+
+        <div>
+            <div class="card" style="margin-bottom:16px;" id="communityStatsCard">
+                <div class="card-header"><h3 class="card-title">📊 Real Data Collected So Far</h3></div>
+                <div id="communityStats" class="stats-grid">
+                    <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Recent Reports</h3>
+                    <button onclick="loadCommunityReports()" class="btn btn-outline btn-sm">Refresh</button>
+                </div>
+                <div id="communityReportsList" class="table-container">
+                    <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    loadCommunityStats();
+    loadCommunityReports();
+});
+</script>
+{% endblock %}

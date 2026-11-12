@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shared Trip Briefing — Cold Weather EV Modeler</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div style="max-width:680px;margin:40px auto;padding:0 20px;">
+        <div style="text-align:center;margin-bottom:24px;">
+            <h1 style="font-size:20px;">❄️ Cold Weather EV Range Degradation Modeler</h1>
+            <p style="color:var(--text-muted,#8892a8);font-size:13px;">Shared trip briefing — read-only, no account needed</p>
+        </div>
+
+        <div class="card" style="padding:20px;">
+            <h2 style="margin-bottom:4px;">
+                {{ vehicle.manufacturer if vehicle else '' }} {{ vehicle.model_name if vehicle else 'Vehicle' }}
+            </h2>
+            <p style="color:var(--text-muted,#8892a8);font-size:13px;margin-bottom:16px;">
+                {{ prediction.created_at.strftime('%B %d, %Y at %H:%M') if prediction.created_at else '' }}
+            </p>
+
+            <div class="stats-grid" style="margin-bottom:16px;">
+                <div class="stat-card">
+                    <div class="stat-icon red">📉</div>
+                    <div><div class="stat-value">{{ prediction.range_degradation_pct }}%</div><div class="stat-label">Range Degradation</div></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon blue">🛣️</div>
+                    <div><div class="stat-value">{{ prediction.predicted_range_km }} km</div><div class="stat-label">Predicted Range</div></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon amber">⚡</div>
+                    <div><div class="stat-value">{{ prediction.energy_consumption_wh_km }} Wh/km</div><div class="stat-label">Energy Consumption</div></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon cyan">🌡️</div>
+                    <div><div class="stat-value">{{ prediction.temperature_c }}°C</div><div class="stat-label">Temperature</div></div>
+                </div>
+            </div>
+
+            <div style="border-top:1px solid var(--border-color,#333);padding-top:16px;">
+                <h3 style="font-size:14px;margin-bottom:8px;">💬 AI Trip Briefing</h3>
+                <p style="font-size:14px;color:var(--text-secondary,#c5c9d6);line-height:1.6;">{{ briefing }}</p>
+                <div style="font-size:11px;color:var(--text-muted,#8892a8);margin-top:8px;">source: {{ briefing_source }}</div>
+            </div>
+        </div>
+
+        <p style="text-align:center;font-size:12px;color:var(--text-muted,#8892a8);margin-top:20px;">
+            This is a read-only shared view. <a href="{{ url_for('auth.login') }}" style="color:var(--border-glow,#638cff);">Sign in</a>
+            to make your own predictions.
+        </p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# INFRA-2: dev/test-only dependencies -- not needed to run the app
+# itself, only to run tests/. Install with:
+#   pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+pytest>=8.0.0

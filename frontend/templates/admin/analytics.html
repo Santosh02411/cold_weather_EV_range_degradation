@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Analytics — Admin{% endblock %}
+{% block page_title %}📊 System Analytics{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <!-- Model Performance -->
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 class="card-title">🤖 ML Model Performance</h3></div>
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Model</th><th>Predictions</th><th>Avg Degradation %</th></tr></thead>
+                <tbody>
+                    {% for model_name, count, avg_deg in model_stats %}
+                    <tr>
+                        <td><strong>{{ (model_name or 'Unknown')|replace('_', ' ')|title }}</strong></td>
+                        <td>{{ count }}</td>
+                        <td><span class="badge {% if avg_deg and avg_deg > 20 %}badge-red{% else %}badge-green{% endif %}">{{ '%.1f' | format(avg_deg or 0) }}%</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Daily Predictions -->
+    <div class="card">
+        <div class="card-header"><h3 class="card-title">📅 Daily Prediction Activity</h3></div>
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Date</th><th>Predictions</th></tr></thead>
+                <tbody>
+                    {% for date, count in daily_stats %}
+                    <tr>
+                        <td>{{ date }}</td>
+                        <td><span class="badge badge-blue">{{ count }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div style="margin-top:16px;"><a href="{{ url_for('admin.panel') }}" class="btn btn-outline">← Back to Admin Panel</a></div>
+</div>
+{% endblock %}

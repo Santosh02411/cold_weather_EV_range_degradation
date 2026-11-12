@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Cold Snap Alerts — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🔔 Cold Snap Alerts{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:14px;">
+        Get an email when a location you care about drops to or below a temperature threshold.
+        Checked automatically in the background (or trigger a check now for testing).
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">New Alert</h3></div>
+            <form onsubmit="submitAlertSubscription(event)">
+                <div class="form-group">
+                    <label class="form-label">Location (city)</label>
+                    <input type="text" name="location" class="form-control" placeholder="e.g. Minneapolis, MN" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Alert me when temperature drops to or below (°C)</label>
+                    <input type="number" name="temperature_threshold_c" class="form-control" value="-10" step="0.5" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Create Alert</button>
+            </form>
+            <button class="btn btn-outline btn-sm" style="margin-top:14px;" onclick="checkAlertsNow()">Check now (test)</button>
+            <div id="checkNowResult" style="margin-top:8px;font-size:12px;color:var(--text-muted);"></div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Your Alerts</h3>
+                <button onclick="loadAlertSubscriptions()" class="btn btn-outline btn-sm">Refresh</button>
+            </div>
+            <div id="alertSubscriptionsList">
+                <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', loadAlertSubscriptions);
+</script>
+{% endblock %}

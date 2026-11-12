@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}Battery Health Dashboard — {{ vehicle.manufacturer }} {{ vehicle.model_name }}{% endblock %}
+{% block page_title %}🔋 Battery Health Dashboard{% endblock %}
+{% block content %}
+<div class="animate-fade">
+    <p style="color:var(--text-secondary);margin-bottom:16px;font-size:14px;">
+        {{ vehicle.manufacturer }} {{ vehicle.model_name }} — log real State of Health (SOH %) readings
+        (most EVs show this in their own app) for a real degradation trend; without any readings yet,
+        estimates below use a research-cited typical decline rate instead.
+    </p>
+
+    <!-- Battery Intelligence summary -->
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3 class="card-title">🧠 Battery Intelligence</h3></div>
+        <div id="batteryIntelligenceSummary" class="stats-grid">
+            <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+        </div>
+        <div id="agingAnalysisNote" style="margin-top:10px;font-size:12px;color:var(--text-muted);"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Log a Reading</h3></div>
+            <form onsubmit="submitBatteryHealth(event, {{ vehicle.id }})">
+                <div class="form-group">
+                    <label class="form-label">Battery State of Health (%)</label>
+                    <input type="number" name="soh_pct" class="form-control" min="0" max="100" step="0.1" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Odometer (km, optional)</label>
+                    <input type="number" name="odometer_km" class="form-control" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Notes (optional)</label>
+                    <textarea name="notes" class="form-control" rows="2"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Save Reading</button>
+            </form>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Trend</h3></div>
+            <div id="batteryTrendSummary">
+                <p style="color:var(--text-muted);font-size:13px;">Loading…</p>
+            </div>
+            <div id="batteryHistoryTable" style="margin-top:14px;"></div>
+        </div>
+    </div>
+
+    <!-- Efficiency Curve -->
+    <div class="card" style="margin-top:20px;">
+        <div class="card-header"><h3 class="card-title">📉 Efficiency Curve (Energy Use vs. Temperature)</h3></div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+            Generated from this vehicle's actual trained prediction model, not a separate formula — shows
+            what the model would predict at each temperature for a typical trip.
+        </p>
+        <div class="chart-container"><canvas id="efficiencyCurveChart"></canvas></div>
+    </div>
+
+    <!-- Cold Start & Temperature Exposure -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">❄️ Cold Start Efficiency</h3></div>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+                Short trips in cold weather use noticeably more energy per km before the pack and cabin warm up.
+                Published reports describe a ~6km winter trip using roughly double the energy of a warm-weather
+                equivalent, fading on longer trips — enter a distance and temperature to see the estimated effect.
+            </p>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="number" id="coldStartDistance" placeholder="Trip distance (km)" value="5" style="flex:1">
+                <input type="number" id="coldStartTemp" placeholder="Temp (°C)" value="-15" style="flex:1">
+                <button class="btn btn-sm" onclick="calcColdStart()">Estimate</button>
+            </div>
+            <div id="coldStartResult" style="font-size:13px;color:var(--text-secondary);"></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">🌡️ Temperature Exposure</h3></div>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+                Based on this app's own logged weather lookups for a city — grows more meaningful with use, not a full climate record.
+            </p>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="text" id="exposureCityInput" placeholder="City" style="flex:1">
+                <button class="btn btn-sm" onclick="loadTemperatureExposure()">Check</button>
+            </div>
+            <div id="temperatureExposureResult" style="font-size:13px;color:var(--text-secondary);"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => loadBatteryHealth({{ vehicle.id }}));
+
+function calcColdStart() {
+    const distance = parseFloat(document.getElementById('coldStartDistance').value);
+    const temp = parseFloat(document.getElementById('coldStartTemp').value);
+    const resultEl = document.getElementById('coldStartResult');
+    if (isNaN(distance) || isNaN(temp)) return;
+    // Mirrors services/battery_intelligence.py::cold_start_energy_multiplier
+    let multiplier = 1.0;
+    if (temp < 10 && distance > 0) {
+        const coldSeverity = Math.min(1.0, (10 - temp) / 30.0);
+        const distanceFactor = Math.max(0.0, 1.0 - (distance / 25.0));
+        multiplier = Math.round((1.0 + coldSeverity * distanceFactor) * 100) / 100;
+    }
+    const extraPct = Math.round((multiplier - 1) * 100);
+    resultEl.textContent = extraPct > 0
+        ? `Estimated ~${extraPct}% more energy per km for this trip while the pack/cabin warm up.`
+        : `No meaningful cold-start effect expected at this temperature/distance.`;
+}
+
+async function loadTemperatureExposure() {
+    const city = document.getElementById('exposureCityInput').value.trim();
+    const resultEl = document.getElementById('temperatureExposureResult');
+    if (!city) return;
+    resultEl.textContent = 'Loading…';
+    try {
+        const result = await apiFetch(`/weather/api/temperature-exposure?city=${encodeURIComponent(city)}`);
+        if (result.sample_size === 0) {
+            resultEl.textContent = result.note;
+            return;
+        }
+        resultEl.innerHTML = `${result.pct_readings_below_freezing}% of logged readings for ${result.city} were at or below freezing.<br>
+            <span style="font-size:11px;color:var(--text-muted);">${result.note}</span>`;
+    } catch (e) {
+        resultEl.textContent = `Couldn't load: ${e.message}`;
+    }
+}
+
+let efficiencyChartInstance = null;
+async function loadEfficiencyCurve() {
+    try {
+        const result = await apiFetch('/vehicles/api/{{ vehicle.id }}/efficiency-curve');
+        const curve = result.curve || [];
+        const ctx = document.getElementById('efficiencyCurveChart');
+        if (!ctx || curve.length === 0) return;
+        if (efficiencyChartInstance) efficiencyChartInstance.destroy();
+        efficiencyChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: curve.map(p => p.temperature_c + '°C'),
+                datasets: [{
+                    label: 'Energy Consumption (Wh/km)',
+                    data: curve.map(p => p.energy_consumption_wh_km),
+                    borderColor: '#638cff',
+                    backgroundColor: 'rgba(99,140,255,0.1)',
+                    tension: 0.3,
+                    fill: true,
+                }],
+            },
+            options: { responsive: true, plugins: { legend: { display: true } } },
+        });
+    } catch (e) { /* non-critical */ }
+}
+
+async function loadBatteryIntelligence(vehicleId) {
+    const summary = document.getElementById('batteryIntelligenceSummary');
+    const agingNote = document.getElementById('agingAnalysisNote');
+    try {
+        const result = await apiFetch(`/vehicles/api/${vehicleId}/battery-health`);
+        const bi = result.battery_intelligence;
+        if (summary && bi) {
+            summary.innerHTML = `
+                <div class="stat-card"><div class="stat-icon blue">🔋</div>
+                    <div><div class="stat-value">${bi.current_soh_pct ?? '—'}%</div><div class="stat-label">Current SOH</div></div></div>
+                <div class="stat-card"><div class="stat-icon amber">📅</div>
+                    <div><div class="stat-value">${bi.years_to_70pct_eol ?? '—'}</div><div class="stat-label">Years to 70% (typical EOL)</div></div></div>
+                <div class="stat-card"><div class="stat-icon ${bi.soh_source === 'measured' ? 'green' : 'cyan'}">${bi.soh_source === 'measured' ? '✅' : '📐'}</div>
+                    <div><div class="stat-value" style="font-size:13px;">${bi.soh_source}</div><div class="stat-label">Data Source</div></div></div>`;
+        }
+        if (agingNote && bi && bi.aging_analysis) {
+            const a = bi.aging_analysis;
+            const label = a.classification.replace(/_/g, ' ');
+            agingNote.textContent = `Aging rate: ${label} (${a.user_decline_pct_per_year}%/yr vs. ${a.typical_decline_pct_per_year}%/yr typical, per Geotab fleet telemetry).`;
+        } else if (agingNote) {
+            agingNote.textContent = 'Log at least 2 readings to compare your real aging rate against the typical rate.';
+        }
+        loadEfficiencyCurve();
+    } catch (e) {
+        if (summary) summary.innerHTML = `<p style="color:var(--text-muted);font-size:13px;">Couldn't load: ${e.message}</p>`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => loadBatteryIntelligence({{ vehicle.id }}));
+</script>
+{% endblock %}

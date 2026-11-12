@@ -1,0 +1,256 @@
+from flask import Blueprint, render_template, request, jsonify, current_app
+from flask_login import login_required, current_user
+from ..models.prediction import TripSimulation
+from ..models.ev_vehicle import EVVehicle
+from ..ml.predict import get_prediction
+from ..services.geo import geocode_place, get_route, get_elevation_profile, classify_terrain_from_elevations, select_route_waypoints
+from .weather import fetch_openweathermap, fetch_openweathermap_by_coords, get_demo_weather
+from .. import db
+
+trip_bp = Blueprint('trip', __name__)
+
+
+@trip_bp.route('/')
+@login_required
+def index():
+    vehicles = EVVehicle.query.filter_by(is_active=True).all()
+    return render_template('trip/simulate.html', vehicles=vehicles)
+
+
+@trip_bp.route('/api/simulate', methods=['POST'])
+@login_required
+def simulate():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    vehicle = EVVehicle.query.get(data.get('vehicle_id'))
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+
+    distance_km = float(data.get('distance_km', 100))
+    temperature_c = float(data.get('temperature_c', 20))
+    speed_kmh = float(data.get('speed_kmh', 60))
+    heater_usage = bool(data.get('heater_usage', True))
+    num_passengers = int(data.get('num_passengers', 1))
+    battery_pct = float(data.get('battery_percentage', 100))
+
+    # Get degradation prediction
+    features = {
+        'temperature_c': temperature_c,
+        'humidity': float(data.get('humidity', 50)),
+        'wind_speed_kmh': float(data.get('wind_speed_kmh', 10)),
+        'precipitation': data.get('precipitation', 'none'),
+        'battery_percentage': battery_pct,
+        'vehicle_speed_kmh': speed_kmh,
+        'hvac_usage': heater_usage,
+        'terrain_type': data.get('terrain_type', 'flat'),
+        'battery_age_years': float(data.get('battery_age_years', 0)),
+        'battery_capacity_kwh': vehicle.battery_capacity_kwh,
+        'epa_range_km': vehicle.epa_range_km,
+        'vehicle_weight_kg': vehicle.vehicle_weight_kg + (num_passengers * 75),
+    }
+    result = get_prediction(features, 'random_forest')
+
+    effective_range = result['predicted_range_km'] * (battery_pct / 100)
+    energy_per_km = result['energy_consumption_wh_km'] / 1000
+    total_energy_kwh = distance_km * energy_per_km
+    battery_usage_pct = (total_energy_kwh / vehicle.battery_capacity_kwh) * 100
+    arrival_battery_pct = max(0, battery_pct - battery_usage_pct)
+    charging_stops = max(0, int((battery_usage_pct - battery_pct) / 60)) if battery_usage_pct > battery_pct else 0
+
+    trip = TripSimulation(
+        user_id=current_user.id, vehicle_id=vehicle.id,
+        source_location=data.get('source', 'Origin'),
+        destination=data.get('destination', 'Destination'),
+        distance_km=distance_km, temperature_c=temperature_c,
+        speed_kmh=speed_kmh, heater_usage=heater_usage,
+        num_passengers=num_passengers,
+        estimated_battery_usage_pct=round(battery_usage_pct, 1),
+        predicted_remaining_range_km=round(max(0, effective_range - distance_km), 1),
+        charging_stops_required=charging_stops,
+        estimated_arrival_battery_pct=round(arrival_battery_pct, 1),
+        estimated_energy_kwh=round(total_energy_kwh, 2),
+    )
+    db.session.add(trip)
+    db.session.commit()
+
+    return jsonify({
+        'trip': trip.to_dict(),
+        'degradation': result,
+    })
+
+
+@trip_bp.route('/api/route-predict', methods=['POST'])
+@login_required
+def route_predict():
+    """Phase 2 (RT-1/RT-2): given real place names instead of a manual
+    distance + terrain guess, geocode both ends, fetch a real driving
+    route, derive terrain from the route's actual elevation profile, and
+    pull real current weather at the origin - then run the same
+    prediction model as /api/simulate on top of that real data.
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    origin_name = data.get('source')
+    dest_name = data.get('destination')
+    if not origin_name or not dest_name:
+        return jsonify({'error': 'source and destination place names are required'}), 400
+
+    vehicle = EVVehicle.query.get(data.get('vehicle_id'))
+    if not vehicle:
+        return jsonify({'error': 'Vehicle not found'}), 404
+
+    origin_lat, origin_lon, origin_display = geocode_place(origin_name)
+    if origin_lat is None:
+        return jsonify({'error': f"Could not geocode source '{origin_name}'"}), 502
+    dest_lat, dest_lon, dest_display = geocode_place(dest_name)
+    if dest_lat is None:
+        return jsonify({'error': f"Could not geocode destination '{dest_name}'"}), 502
+
+    route = get_route(origin_lat, origin_lon, dest_lat, dest_lon, provider_config=current_app.config)
+    if route is None:
+        return jsonify({'error': 'Could not fetch a driving route between these locations'}), 502
+
+    elevations = get_elevation_profile(route['coordinates'])
+    if elevations:
+        terrain_type, elevation_gain_m = classify_terrain_from_elevations(elevations)
+        terrain_source = 'measured'
+    else:
+        # Elevation lookup failing shouldn't block the whole prediction -
+        # fall back to the user's manual choice (or 'flat') and say so,
+        # rather than silently guessing.
+        terrain_type = data.get('terrain_type_fallback', 'flat')
+        elevation_gain_m = None
+        terrain_source = 'fallback (elevation lookup unavailable)'
+
+    api_key = current_app.config.get('OPENWEATHERMAP_API_KEY', 'demo')
+
+    def _fetch_weather_for(place_name):
+        if api_key and api_key != 'demo':
+            w, err = fetch_openweathermap(place_name, api_key)
+            if err:
+                return get_demo_weather(place_name)
+            return w
+        return get_demo_weather(place_name)
+
+    def _fetch_weather_at(lat, lon, label):
+        if api_key and api_key != 'demo':
+            w, err = fetch_openweathermap_by_coords(lat, lon, api_key)
+            if err:
+                return get_demo_weather(label)
+            return w
+        return get_demo_weather(label)
+
+    # RT-6: full multi-waypoint sampling, OFF by default (see config.py's
+    # WEATHER_MULTI_WAYPOINT_ENABLED docstring for the real cost tradeoff
+    # against the free OpenWeatherMap tier). When enabled, replaces the
+    # RT-5 2-point (origin+destination) sampling with N evenly-spaced
+    # points along the route's real path.
+    multi_waypoint_enabled = current_app.config.get('WEATHER_MULTI_WAYPOINT_ENABLED', False)
+    weather_samples = []
+
+    if multi_waypoint_enabled and route.get('coordinates'):
+        interval_km = current_app.config.get('WEATHER_WAYPOINT_INTERVAL_KM', 150)
+        max_waypoints = current_app.config.get('WEATHER_MAX_WAYPOINTS', 6)
+        waypoints = select_route_waypoints(route['coordinates'], interval_km, max_waypoints)
+        for i, (lat, lon) in enumerate(waypoints):
+            label = origin_name if i == 0 else (dest_name if i == len(waypoints) - 1 else f"waypoint {i}")
+            w = _fetch_weather_at(lat, lon, label)
+            weather_samples.append({'label': label, 'lat': lat, 'lon': lon,
+                                     'temperature_c': w['temperature_c'], 'data_source': w.get('data_source', 'unknown')})
+        # Same worst-case (coldest) selection principle as the 2-point
+        # version below -- just across however many points were sampled.
+        coldest = min(weather_samples, key=lambda s: s['temperature_c'])
+        weather = _fetch_weather_at(coldest['lat'], coldest['lon'], coldest['label'])
+    else:
+        # RT-5 (Phase 3): sample weather at BOTH ends of the route. Full
+        # multi-waypoint sampling (RT-6, above) is available but opt-in.
+        origin_weather = _fetch_weather_for(origin_name)
+        dest_weather = _fetch_weather_for(dest_name)
+        weather_samples = [
+            {'label': origin_name, 'temperature_c': origin_weather['temperature_c'], 'data_source': origin_weather.get('data_source', 'unknown')},
+            {'label': dest_name, 'temperature_c': dest_weather['temperature_c'], 'data_source': dest_weather.get('data_source', 'unknown')},
+        ]
+        # Use whichever end is colder for the prediction: colder
+        # conditions are the binding constraint on range for a cold-
+        # weather-focused tool (arriving with less charge than the
+        # optimistic estimate is a worse failure mode than the reverse).
+        weather = origin_weather if origin_weather['temperature_c'] <= dest_weather['temperature_c'] else dest_weather
+
+    battery_pct = float(data.get('battery_percentage', 100))
+    heater_usage = bool(data.get('heater_usage', True))
+    num_passengers = int(data.get('num_passengers', 1))
+    distance_km = route['distance_km']
+
+    features = {
+        'temperature_c': weather['temperature_c'],
+        'humidity': weather.get('humidity', 50),
+        'wind_speed_kmh': weather.get('wind_speed_kmh', 10),
+        'precipitation': weather.get('precipitation', 'none'),
+        'battery_percentage': battery_pct,
+        'vehicle_speed_kmh': float(data.get('speed_kmh', 60)),
+        'hvac_usage': heater_usage,
+        'terrain_type': terrain_type,
+        'battery_age_years': float(data.get('battery_age_years', 0)),
+        'battery_capacity_kwh': vehicle.battery_capacity_kwh,
+        'epa_range_km': vehicle.epa_range_km,
+        'vehicle_weight_kg': vehicle.vehicle_weight_kg + (num_passengers * 75),
+    }
+    result = get_prediction(features, 'random_forest')
+
+    effective_range = result['predicted_range_km'] * (battery_pct / 100)
+    energy_per_km = result['energy_consumption_wh_km'] / 1000
+    total_energy_kwh = distance_km * energy_per_km
+    battery_usage_pct = (total_energy_kwh / vehicle.battery_capacity_kwh) * 100
+    arrival_battery_pct = max(0, battery_pct - battery_usage_pct)
+    charging_stops = max(0, int((battery_usage_pct - battery_pct) / 60)) if battery_usage_pct > battery_pct else 0
+
+    trip = TripSimulation(
+        user_id=current_user.id, vehicle_id=vehicle.id,
+        source_location=origin_display or origin_name,
+        destination=dest_display or dest_name,
+        distance_km=distance_km, temperature_c=weather['temperature_c'],
+        speed_kmh=features['vehicle_speed_kmh'], heater_usage=heater_usage,
+        num_passengers=num_passengers,
+        estimated_battery_usage_pct=round(battery_usage_pct, 1),
+        predicted_remaining_range_km=round(max(0, effective_range - distance_km), 1),
+        charging_stops_required=charging_stops,
+        estimated_arrival_battery_pct=round(arrival_battery_pct, 1),
+        estimated_energy_kwh=round(total_energy_kwh, 2),
+    )
+    db.session.add(trip)
+    db.session.commit()
+
+    return jsonify({
+        'trip': trip.to_dict(),
+        'degradation': result,
+        'route': {
+            'origin': origin_display or origin_name,
+            'destination': dest_display or dest_name,
+            'distance_km': distance_km,
+            'duration_min': route['duration_min'],
+        },
+        'terrain': {
+            'type': terrain_type,
+            'elevation_gain_m': elevation_gain_m,
+            'source': terrain_source,
+        },
+        'weather': {
+            'temperature_c': weather['temperature_c'],
+            'data_source': weather.get('data_source', 'unknown'),
+            'sampling_mode': 'multi_waypoint' if multi_waypoint_enabled else 'two_point',
+            'note': 'coldest of the sampled points was used for the prediction (worst-case, not average)',
+            'samples': weather_samples,
+        },
+    })
+
+
+@trip_bp.route('/api/history')
+@login_required
+def trip_history():
+    trips = TripSimulation.query.filter_by(user_id=current_user.id)\
+        .order_by(TripSimulation.created_at.desc()).limit(20).all()
+    return jsonify([t.to_dict() for t in trips])

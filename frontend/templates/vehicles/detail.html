@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ vehicle.manufacturer }} {{ vehicle.model_name }} — EV Cold Weather Modeler{% endblock %}
+{% block page_title %}🚗 {{ vehicle.manufacturer }} {{ vehicle.model_name }}{% endblock %}
+{% block content %}
+<div class="animate-fade" style="max-width:800px;">
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:start;">
+            <div>
+                <div style="font-size:13px;color:var(--text-muted);">{{ vehicle.manufacturer }}{% if vehicle.year %} · {{ vehicle.year }}{% endif %}</div>
+                <h2 style="margin:4px 0;">{{ vehicle.model_name }}</h2>
+                {% if vehicle.vehicle_type %}<span class="badge badge-blue">{{ vehicle.vehicle_type|title }}</span>{% endif %}
+                {% if vehicle.supports_fast_charging %}<span class="badge badge-green">⚡ Fast Charging</span>{% endif %}
+            </div>
+            <button class="btn btn-outline" id="detailFavoriteBtn" onclick="toggleDetailFavorite({{ vehicle.id }})"
+                    style="{% if is_favorite %}color:#ef4444;border-color:#ef4444;{% endif %}">
+                {% if is_favorite %}❤️ Favorited{% else %}🤍 Add to Favorites{% endif %}
+            </button>
+        </div>
+
+        {% if vehicle.image_path %}
+        <img src="{{ url_for('static', filename=vehicle.image_path) }}" alt="{{ vehicle.model_name }}" style="width:100%;max-height:320px;object-fit:cover;border-radius:10px;margin:16px 0;">
+        {% endif %}
+
+        {% if vehicle.price_usd %}
+        <div style="font-size:22px;font-weight:700;color:var(--accent-blue);margin:10px 0;">${{ '{:,.0f}'.format(vehicle.price_usd) }}</div>
+        {% endif %}
+
+        <h3 style="font-size:14px;margin-top:20px;margin-bottom:10px;">Battery & Range</h3>
+        <div class="vehicle-specs">
+            <div class="spec-item"><span class="spec-label">Battery Capacity</span><span class="spec-value">{{ vehicle.battery_capacity_kwh }} kWh</span></div>
+            <div class="spec-item"><span class="spec-label">EPA Range</span><span class="spec-value">{{ vehicle.epa_range_km }} km</span></div>
+            <div class="spec-item"><span class="spec-label">Battery Chemistry</span><span class="spec-value"><span class="badge badge-blue">{{ vehicle.battery_chemistry }}</span></span></div>
+            <div class="spec-item"><span class="spec-label">Energy Consumption</span><span class="spec-value">{{ vehicle.energy_consumption_wh_km or '--' }} Wh/km</span></div>
+            <div class="spec-item"><span class="spec-label">Efficiency Rating</span><span class="spec-value"><span class="badge badge-green">{{ vehicle.efficiency_rating }}</span></span></div>
+        </div>
+
+        <h3 style="font-size:14px;margin-top:20px;margin-bottom:10px;">Charging</h3>
+        <div class="vehicle-specs">
+            <div class="spec-item"><span class="spec-label">Connector Type</span><span class="spec-value">{{ vehicle.charging_type }}</span></div>
+            <div class="spec-item"><span class="spec-label">Max Charging Power</span><span class="spec-value">{{ vehicle.max_charging_power_kw or '--' }} kW</span></div>
+            <div class="spec-item"><span class="spec-label">Fast Charging Support</span><span class="spec-value">{{ 'Yes' if vehicle.supports_fast_charging else 'No' }}</span></div>
+        </div>
+
+        <h3 style="font-size:14px;margin-top:20px;margin-bottom:10px;">Vehicle</h3>
+        <div class="vehicle-specs">
+            <div class="spec-item"><span class="spec-label">Drivetrain</span><span class="spec-value">{{ vehicle.drivetrain or '--' }}</span></div>
+            <div class="spec-item"><span class="spec-label">Weight</span><span class="spec-value">{{ vehicle.vehicle_weight_kg }} kg</span></div>
+            <div class="spec-item"><span class="spec-label">Type</span><span class="spec-value">{{ vehicle.vehicle_type|title if vehicle.vehicle_type else '--' }}</span></div>
+        </div>
+
+        <div style="margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="{{ url_for('vehicles.edit_vehicle', vehicle_id=vehicle.id) }}" class="btn btn-outline btn-sm">✏️ Edit</a>
+            <a href="{{ url_for('vehicles.battery_health_page', vehicle_id=vehicle.id) }}" class="btn btn-outline btn-sm">🔋 Battery Health</a>
+            <a href="{{ url_for('vehicles.list_vehicles') }}" class="btn btn-outline btn-sm">← Back to Vehicles</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function toggleDetailFavorite(vehicleId) {
+    const btn = document.getElementById('detailFavoriteBtn');
+    const isFavorited = btn.textContent.includes('Favorited');
+    try {
+        if (isFavorited) {
+            await apiFetch(`/vehicles/api/${vehicleId}/favorite`, { method: 'DELETE' });
+            btn.innerHTML = '🤍 Add to Favorites';
+            btn.style.color = ''; btn.style.borderColor = '';
+        } else {
+            await apiFetch(`/vehicles/api/${vehicleId}/favorite`, { method: 'POST' });
+            btn.innerHTML = '❤️ Favorited';
+            btn.style.color = '#ef4444'; btn.style.borderColor = '#ef4444';
+        }
+    } catch (e) {
+        showAlert('danger', e.message);
+    }
+}
+</script>
+{% endblock %}

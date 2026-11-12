@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Not Found — Cold Weather EV Modeler</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div style="max-width:500px;margin:80px auto;padding:0 20px;text-align:center;">
+        <h1 style="font-size:18px;">🔗 This share link isn't valid</h1>
+        <p style="color:var(--text-muted,#8892a8);font-size:14px;margin-top:8px;">
+            It may have been revoked by whoever shared it, or the link is incomplete.
+        </p>
+        <a href="{{ url_for('auth.login') }}" style="color:var(--border-glow,#638cff);font-size:14px;">Go to sign in</a>
+    </div>
+</body>
+</html>
