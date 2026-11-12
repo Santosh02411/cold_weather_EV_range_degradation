@@ -1,0 +1,7 @@
+name = "ads-saas-backend"
+main = "src/index-simple.js"
+compatibility_date = "2024-09-23"
+
+[vars]
+JWT_SECRET = "your-jwt-secret-key-change-this-in-production"
+ENVIRONMENT = "development"
